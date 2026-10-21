@@ -174,3 +174,34 @@ Add one entry per experiment, in this format:
   - **Not covered:** no graphical session was logged in (only the GDM
     greeter), so the Session section shows the SSH `tty` session, and
     Wayland/X11 detection is untested on this machine.
+- 2026-10-21 · Three QEMU/KVM VMs (2 vCPU, 2 GB) hosted on the Ubuntu 24.04
+  machine (i3-3220, QEMU 8.2.2), booted from official cloud images
+  (checksums verified; checksum files not signature-checked) with
+  `scripts/vm-doctor.sh` · M0 `ulai doctor` as an unprivileged guest user
+  (uid 1000), same static binary (sha256 `5874501a…`)
+
+  | Guest | Kernel | Landlock | Label | userns probe | Yama | glibc |
+  |---|---|---|---|---|---|---|
+  | Debian 13 (trixie) | 6.12.113+deb13-cloud-amd64 | ABI 6 | Weak | all steps ok | 0 | 2.41 |
+  | Fedora 44 Cloud | 6.19.10-300.fc44 | ABI 7 | Weak | all steps ok | 0 | 2.43 |
+  | Ubuntu 26.04.1 LTS | 7.0.0-38-generic | ABI 8 | Weak | fails at `setgroups` (EACCES), `apparmor_restrict_unprivileged_userns=1` | 1 | 2.43 |
+
+  - **Labels:** Debian 13's ABI 6 matches the roadmap's prediction. Fedora
+    has SELinux in its LSM list and no `unprivileged_userns_clone` sysctl;
+    doctor correctly omits that key there. Ubuntu 26.04 keeps the AppArmor
+    user-namespace restriction, with the same behaviour as on 24.04.
+  - **No guest is at ABI ≥ 9.** So far, only the Arch dev host gets Strong.
+  - **xdg-dbus-proxy is not installed** on any of the three cloud images.
+    `fusermount3` is present on Fedora and Ubuntu; libfuse2 is on none.
+  - **GPU:** the cloud images are headless.
+    - Fedora and Ubuntu show QEMU's standard VGA as `card0` (0x1234:0x1111,
+      `bochs-drm`, unknown stack). Debian's `-cloud` kernel has no DRM driver
+      at all.
+    - None of the three has render nodes, Vulkan/EGL manifests or loaders.
+  - **Every section reported `status: ok`** with no errors, both runs exited
+    0, and no probe directories were left behind.
+  - **Timing:** a full VM cycle (boot, cloud-init, two doctor runs,
+    teardown) took about 60 s for Debian (after a 34 s image download),
+    135 s for Fedora and 112 s for Ubuntu 26.04, including their downloads.
+  - **Not covered:** desktop sessions and real GPUs in these guests,
+    openSUSE Tumbleweed and Linux Mint.
