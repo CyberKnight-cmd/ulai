@@ -109,6 +109,9 @@ impl Errors {
 #[derive(Debug, Clone, Serialize)]
 pub struct Report {
     pub schema: u32,
+    /// Overall result: `ok` when every section is ok, `unknown` when every
+    /// section is unknown, `partial` otherwise.
+    pub status: Status,
     pub ulai_version: &'static str,
     pub kernel: Section<kernel::Kernel>,
     pub lsm: Section<lsm::Lsm>,
@@ -142,8 +145,9 @@ pub fn run(host: &dyn Host) -> Report {
     }))
     .unwrap_or_else(|_| libs::LibIndex::failed("internal error: library lookup panicked"));
 
-    Report {
+    let mut report = Report {
         schema: SCHEMA_VERSION,
+        status: Status::Ok,
         ulai_version: env!("CARGO_PKG_VERSION"),
         kernel: isolated("kernel", || kernel::probe(host)),
         landlock: isolated("landlock", || landlock::probe(host, lsm_has_landlock)),
@@ -156,6 +160,36 @@ pub fn run(host: &dyn Host) -> Report {
         gpu: isolated("gpu", || gpu::probe(host, &libs)),
         dbus_proxy: isolated("dbus_proxy", || dbus_proxy::probe(host)),
         xdg: isolated("xdg", || xdg::probe(host)),
+    };
+    report.status = overall(&report.section_statuses());
+    report
+}
+
+impl Report {
+    fn section_statuses(&self) -> [Status; 11] {
+        [
+            self.kernel.status,
+            self.lsm.status,
+            self.landlock.status,
+            self.userns.status,
+            self.yama.status,
+            self.fuse.status,
+            self.libc.status,
+            self.session.status,
+            self.gpu.status,
+            self.dbus_proxy.status,
+            self.xdg.status,
+        ]
+    }
+}
+
+fn overall(sections: &[Status]) -> Status {
+    if sections.iter().all(|s| *s == Status::Ok) {
+        Status::Ok
+    } else if sections.iter().all(|s| *s == Status::Unknown) {
+        Status::Unknown
+    } else {
+        Status::Partial
     }
 }
 
@@ -190,6 +224,17 @@ mod tests {
         assert_eq!(report.kernel.status, Status::Unknown);
         assert!(report.kernel.errors[0].reason.contains("ENOSYS"));
         assert_eq!(report.landlock.data.label, landlock::Label::None);
+    }
+
+    #[test]
+    fn overall_status() {
+        use Status::*;
+        assert_eq!(overall(&[Ok, Ok]), Ok);
+        assert_eq!(overall(&[Unknown, Unknown]), Unknown);
+        assert_eq!(overall(&[Ok, Unknown]), Partial);
+        assert_eq!(overall(&[Ok, Partial]), Partial);
+        let json = serde_json::to_value(run(&FakeHost::new())).unwrap();
+        assert_eq!(json["status"], "partial");
     }
 
     #[test]

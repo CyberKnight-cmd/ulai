@@ -18,6 +18,11 @@ fn json_has_schema_1_and_every_section() {
     assert!(out.status.success(), "exit {:?}", out.status);
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
     assert_eq!(v["schema"], 1);
+    let status = v["status"].as_str().expect("top-level status");
+    assert!(
+        ["ok", "partial", "unknown"].contains(&status),
+        "status = {status}"
+    );
     for section in [
         "kernel",
         "lsm",

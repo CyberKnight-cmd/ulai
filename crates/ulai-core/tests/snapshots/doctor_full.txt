@@ -20,7 +20,7 @@ Landlock
   ✓ pathname UNIX sockets (RESOLVE_UNIX) (ABI ≥ 9)
   ✓ UDP bind and connect/send (ABI ≥ 10)
   ✓ quiet rules (ADD_RULE_QUIET) (ABI ≥ 10)
-  ✗ no_new_privs flag for restrict_self (ABI ≥ 11)
+  ✗ no_new_privs flag for restrict_self (unconfirmed) (ABI ≥ 11)
 
 User namespaces
     max_user_namespaces = 94304

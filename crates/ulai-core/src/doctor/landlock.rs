@@ -9,16 +9,18 @@
 //! the ABI without creating a ruleset, and caps its ABI enum at V9.
 //!
 //! The ABI → feature table is SPEC §6.2. ABI 1–10 match the Linux 7.2 uapi
-//! header; ABI 8 (`TSYNC`) and ABI 11 (restrict_self no_new_privs flag) come
-//! from the kernel documentation, as the header does not state their ABI.
+//! header (ABI 8 `TSYNC` from the kernel documentation). ABI 11 is
+//! **unconfirmed**: it comes from a third-party pull-request note, and no
+//! released header defines it yet.
 
 use serde::Serialize;
 
 use super::{Errors, Section};
 use crate::host::{Host, errno_name};
 
-/// Highest ABI whose features this version of ULAI knows.
-pub const NEWEST_KNOWN_ABI: i32 = 11;
+/// Highest ABI whose features are confirmed by a released kernel header.
+/// Kernels above it get `abi_newer_than_known`.
+pub const NEWEST_KNOWN_ABI: i32 = 10;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -93,7 +95,8 @@ pub struct Features {
     /// ABI 10: quiet rules (`LANDLOCK_ADD_RULE_QUIET`, per-rule log
     /// suppression).
     pub quiet_rules: bool,
-    /// ABI 11: no_new_privs flag for `landlock_restrict_self()`.
+    /// ABI 11 (unconfirmed, see the module docs): no_new_privs flag for
+    /// `landlock_restrict_self()`.
     pub restrict_self_nnp: bool,
 }
 
@@ -110,7 +113,7 @@ pub const FEATURE_TABLE: [(&str, i32); 12] = [
     ("pathname UNIX sockets (RESOLVE_UNIX)", 9),
     ("UDP bind and connect/send", 10),
     ("quiet rules (ADD_RULE_QUIET)", 10),
-    ("no_new_privs flag for restrict_self", 11),
+    ("no_new_privs flag for restrict_self (unconfirmed)", 11),
 ];
 
 pub fn features_for(abi: Option<i32>) -> Features {
@@ -280,8 +283,8 @@ mod tests {
 
     #[test]
     fn newer_abi_is_strong_and_flagged() {
-        assert!(!interpret(Ok(11), Some(true)).data.abi_newer_than_known);
-        let s = interpret(Ok(12), Some(true));
+        assert!(!interpret(Ok(10), Some(true)).data.abi_newer_than_known);
+        let s = interpret(Ok(11), Some(true));
         assert_eq!(s.data.label, Label::Strong);
         assert!(s.data.abi_newer_than_known);
     }

@@ -199,11 +199,14 @@ ULAI's copies of items missing from the `landlock` crate are in
 | 8 | `LANDLOCK_RESTRICT_SELF_TSYNC` (apply to all threads) | 7.0 |
 | 9 | `LANDLOCK_ACCESS_FS_RESOLVE_UNIX` (pathname UNIX sockets) | 7.1 |
 | 10 | UDP bind and connect/send (`LANDLOCK_ACCESS_NET_BIND_UDP`, `…_CONNECT_SEND_UDP`); quiet rules (`quiet_*` ruleset fields, `LANDLOCK_ADD_RULE_QUIET`) | 7.2 (inferred: 7.2.9 reports 10) |
-| 11 | no_new_privs flag for `landlock_restrict_self()` | after 7.2 (not in the 7.2 header) |
+| 11 | **Unconfirmed:** no_new_privs flag for `landlock_restrict_self()` | after 7.2 (not in the 7.2 header) |
 
 Kernel versions for ABI 1–9 are from the kernel commits linked in the
 `landlock` crate's documentation. The ABI 10 quiet rules are stated in the 7.2
-header but were not in the original version of this table.
+header but were not in the original version of this table. The ABI 11 row comes
+from a third-party pull-request note, not a kernel header. It stays
+unconfirmed, and ULAI treats ABI 10 as the newest known ABI, until a released
+header defines it.
 
 ### 6.3 Guarded policy construction (normative)
 
