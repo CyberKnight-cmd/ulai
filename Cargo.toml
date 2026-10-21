@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["crates/ulai-core", "crates/ulai-cli", "crates/ulai-run"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+# No `license` field yet: ADR-012 is open.
+
+[workspace.dependencies]
+ulai-core = { path = "crates/ulai-core" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+# `unwind`, not `abort`: doctor isolates failing probes with catch_unwind.
+panic = "unwind"

@@ -1,0 +1,13 @@
+[package]
+name = "ulai-core"
+description = "ULAI core library: probes, manifest, parsing, policy model"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Exposes `testing::FakeHost` to other crates' tests.
+test-support = []
