@@ -25,6 +25,23 @@ install, uninstall and signed updates.
   stay off-limits unless you agree.
 - **GPU drivers come from the host**, as on Windows. Apps never bundle them.
 
+## Protection depends on your kernel
+
+How well ULAI can isolate an app depends on the Landlock version of the
+running kernel. `ulai doctor` reports it as a protection label:
+
+- **Strong** needs Landlock ABI 9, which means **Linux 7.1 or newer**. Only at
+  this level can ULAI stop an app from reaching the real session bus or the
+  X11 socket.
+- **Weak** (ABI 1–8) protects your files against honest and naive access, but
+  is not real isolation from a malicious app. Most current distributions are
+  here: in our tests, Ubuntu 24.04 and 26.04 (kernel 7.0), Fedora 44 (6.19)
+  and Debian 13 (6.12) were all Weak. See ADR-013 for how this will be
+  handled.
+- **None** means no Landlock; sandboxed modes refuse to run.
+
+Measured results are in [docs/RESEARCH.md](docs/RESEARCH.md).
+
 ## Principles
 
 1. Depend only on what Linux promises to keep stable: the kernel ABI, versioned
