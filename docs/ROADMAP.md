@@ -22,8 +22,9 @@ release and a short results entry in the experiment log in RESEARCH.md.
 **Done when:** it runs on the Arch dev host and three VMs, and the output has
 been checked by hand.
 
-*Status (2026-10-21): checked by hand on the Arch dev host only. The three VM
-runs are still to do, so M0 is not done.*
+*Status (2026-10-21): checked by hand on the Arch dev host and on a real
+Ubuntu 24.04 machine. Two more systems (Debian 13 and Fedora) are still to do,
+so M0 is not done.*
 
 ## M1 — Inspect, validate, verify (~2 weeks)
 
@@ -113,8 +114,8 @@ decompression bomb), without executing any of them.
 
 | System | Why it's in the matrix | Expected label |
 |---|---|---|
-| Arch Linux, dev host, NVIDIA proprietary | Newest kernel; native GPU mode on NVIDIA | Strong (verify with `ulai doctor`) |
-| Ubuntu LTS (24.04 and 26.04) | Most users; AppArmor user-namespace restrictions | Check with `ulai doctor` |
+| Arch Linux, dev host, NVIDIA proprietary | Newest kernel; native GPU mode on NVIDIA | **Strong** (ABI 10, kernel 7.2.9), measured 2026-10-21 |
+| Ubuntu LTS (24.04 and 26.04) | Most users; AppArmor user-namespace restrictions | 24.04.5 with HWE kernel 7.0: **Weak** (ABI 8), measured 2026-10-21. 26.04: check |
 | Fedora (current) | SELinux, GNOME | Check |
 | Debian 13 | Kernel 6.12, so Landlock ABI 6 | Weak |
 | openSUSE Tumbleweed | Rolling release, KDE | Check |

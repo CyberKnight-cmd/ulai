@@ -143,3 +143,34 @@ Add one entry per experiment, in this format:
     including the child-process probe.
   - **Not done:** the three test-matrix VMs (M0's "done when"), and running
     the CI workflow on GitHub.
+- 2026-10-21 · Ubuntu 24.04.5 LTS on real hardware, HWE kernel
+  7.0.0-38-generic, x86_64, Intel GPU (i915, 0x8086:0x0152) · M0 `ulai doctor`
+  over SSH as uid 1000, with the static musl binary (sha256 `5874501a…`) built
+  from commit 0f6c8d7
+  - **Landlock:** **ABI 8 → Weak**. TCP, IOCTL_DEV, scoping and audit are
+    enforceable; pathname sockets (9) and UDP (10) are not. The active LSMs
+    are `lockdown,capability,landlock,yama,apparmor,ima,evm`. I had expected
+    ABI 6; the HWE 7.0 kernel is newer than I assumed. On this machine,
+    Guarded mode would carry the ADR-013 caveat.
+  - **User namespaces:** `apparmor_restrict_unprivileged_userns=1`,
+    `unprivileged_userns_clone=1`, `max_user_namespaces=41022`. In the doctor
+    probe, `unshare(CLONE_NEWUSER|CLONE_NEWNS)` **succeeds**, and the next
+    step (writing `setgroups`) fails with **EACCES**.
+    - The kernel log shows AppArmor `userns_create` → "transitioning profile"
+      to `unprivileged_userns`, then `DENIED capable sys_admin` for `ulai`.
+    - Cross-check: util-linux `unshare --user --map-root-user` hits the same
+      denial but reports `uid_map: EPERM`, because it writes uid_map first.
+      `unshare --user true` (no maps) succeeds.
+    - Conclusion: under this restriction, creating the namespace works, but
+      nothing privileged inside it does. This is input for ADR-013 option (b)
+      and SPEC O2.
+  - **Other probes:** Yama `ptrace_scope=1`. `/dev/fuse` and setuid-root
+    `fusermount`/`fusermount3` are present, but **no `libfuse.so.2`**. glibc
+    is 2.39. `xdg-dbus-proxy` 0.1.5 is installed. Mesa ships eight Vulkan
+    ICDs, plus the `50_mesa` EGL vendor file. The loaders were found via
+    `ldconfig` under `/lib/x86_64-linux-gnu`.
+  - **Every section reported `status: ok`** with no errors. Both runs exited
+    0. No `/tmp/ulai-doctor-*` directory was left behind.
+  - **Not covered:** no graphical session was logged in (only the GDM
+    greeter), so the Session section shows the SSH `tty` session, and
+    Wayland/X11 detection is untested on this machine.
