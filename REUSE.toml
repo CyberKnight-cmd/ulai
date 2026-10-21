@@ -17,3 +17,18 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The ULAI contributors"
 SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# ADR-015: the format documents are CC-BY-4.0 so that other projects can
+# implement the format. These override the GPL default above.
+[[annotations]]
+path = ["docs/SPEC.md", "docs/doctor-schema.md"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The ULAI contributors"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# ADR-015: JSON Schemas are MIT.
+[[annotations]]
+path = ["schemas/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 The ULAI contributors"
+SPDX-License-Identifier = "MIT"

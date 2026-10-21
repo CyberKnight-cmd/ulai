@@ -61,6 +61,9 @@ Measured results are in [docs/RESEARCH.md](docs/RESEARCH.md).
 
 ## License
 
-GPL-3.0-or-later; see [LICENSE](LICENSE) and ADR-012 in
-[docs/DECISIONS.md](docs/DECISIONS.md). Apps packaged as ULAI files keep their
-own licences.
+The tools are GPL-3.0-or-later; see [LICENSE](LICENSE) and ADR-012. So that
+other projects can implement the format, the specification
+([docs/SPEC.md](docs/SPEC.md)) is CC-BY-4.0 and the JSON Schemas
+([schemas/](schemas/)) are MIT (ADR-015). Apps packaged as ULAI files keep
+their own licences. [REUSE.toml](REUSE.toml) records the licence of every
+file.

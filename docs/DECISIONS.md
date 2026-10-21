@@ -102,3 +102,17 @@ into any test VM or distribution, nothing about the host libc is inferred
 from our own libc, and neither tool needs `dlopen`. `ulai-handler` is out of
 scope (GTK must link the host's libraries). aarch64 musl builds follow in M6.
 *Accepted* (2026-10-21).
+
+**ADR-015 — Licences for the parts other projects reuse.** The tools
+(`ulai`, `ulai-run`, `ulai-handler`, `ulai-core`) stay GPL-3.0-or-later
+(ADR-012). Two parts use other licences:
+
+- Any code embedded into distributed app files (a future runtime stub,
+  templates) is **MIT**, so apps under any licence can ship as `.ulai`.
+- The format documents (`docs/SPEC.md`, and `docs/doctor-schema.md` as a
+  format document) are **CC-BY-4.0**. The JSON Schemas (`schemas/`) are
+  **MIT**.
+
+Together these let other projects implement the format. `REUSE.toml` records
+the licence of each path, and `LICENSES/` holds the texts. *Accepted*
+(2026-10-21).
