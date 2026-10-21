@@ -11,11 +11,18 @@ use serde::Serialize;
 
 use crate::host::Host;
 
+pub mod dbus_proxy;
+pub mod fuse;
 pub mod kernel;
 pub mod landlock;
+pub mod libc_probe;
+pub mod libs;
 pub mod lsm;
 pub mod paths;
+pub mod session;
 pub mod userns;
+pub mod xdg;
+pub mod yama;
 
 /// Version of the `--json` contract. Bump on renames, removals or changed
 /// meaning; adding fields does not bump it.
@@ -101,6 +108,12 @@ pub struct Report {
     pub lsm: Section<lsm::Lsm>,
     pub landlock: Section<landlock::Landlock>,
     pub userns: Section<userns::Userns>,
+    pub yama: Section<yama::Yama>,
+    pub fuse: Section<fuse::Fuse>,
+    pub libc: Section<libc_probe::Libc>,
+    pub session: Section<session::Session>,
+    pub dbus_proxy: Section<dbus_proxy::DbusProxy>,
+    pub xdg: Section<xdg::Xdg>,
 }
 
 /// Runs `probe`, turning a panic into an `unknown` section.
@@ -117,6 +130,10 @@ fn isolated<T: Default>(name: &str, probe: impl FnOnce() -> Section<T>) -> Secti
 pub fn run(host: &dyn Host) -> Report {
     let lsm = isolated("lsm", || lsm::probe(host));
     let lsm_has_landlock = lsm.data.landlock_listed;
+    let libs = catch_unwind(AssertUnwindSafe(|| {
+        libs::LibIndex::build(host, libs::WANTED)
+    }))
+    .unwrap_or_else(|_| libs::LibIndex::failed("internal error: library lookup panicked"));
 
     Report {
         schema: SCHEMA_VERSION,
@@ -125,6 +142,12 @@ pub fn run(host: &dyn Host) -> Report {
         landlock: isolated("landlock", || landlock::probe(host, lsm_has_landlock)),
         lsm,
         userns: isolated("userns", || userns::probe(host)),
+        yama: isolated("yama", || yama::probe(host)),
+        fuse: isolated("fuse", || fuse::probe(host, &libs)),
+        libc: isolated("libc", || libc_probe::probe(host)),
+        session: isolated("session", || session::probe(host)),
+        dbus_proxy: isolated("dbus_proxy", || dbus_proxy::probe(host)),
+        xdg: isolated("xdg", || xdg::probe(host)),
     }
 }
 
