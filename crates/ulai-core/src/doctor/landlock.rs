@@ -7,6 +7,10 @@
 //!
 //! Uses the raw syscall: the `landlock` crate (0.4.7) exposes no way to read
 //! the ABI without creating a ruleset, and caps its ABI enum at V9.
+//!
+//! The ABI → feature table is SPEC §6.2. ABI 1–10 match the Linux 7.2 uapi
+//! header; ABI 8 (`TSYNC`) and ABI 11 (restrict_self no_new_privs flag) come
+//! from the kernel documentation, as the header does not state their ABI.
 
 use serde::Serialize;
 
@@ -14,7 +18,7 @@ use super::{Errors, Section};
 use crate::host::{Host, errno_name};
 
 /// Highest ABI whose features this version of ULAI knows.
-pub const NEWEST_KNOWN_ABI: i32 = 10;
+pub const NEWEST_KNOWN_ABI: i32 = 11;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,55 +65,88 @@ pub fn label_for(abi: Option<i32>) -> Label {
     }
 }
 
-/// SPEC features and the minimum ABI that enforces each.
+/// What each Landlock ABI adds, in ABI order (SPEC §6.2). The JSON field
+/// names of the first six features predate this table and are kept for
+/// schema 1.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 pub struct Features {
-    /// TCP bind/connect control (ABI ≥ 4).
+    /// ABI 1: base filesystem access rights.
+    pub fs_base: bool,
+    /// ABI 2: `LANDLOCK_ACCESS_FS_REFER` (rename/link across directories).
+    pub refer: bool,
+    /// ABI 3: `LANDLOCK_ACCESS_FS_TRUNCATE`.
+    pub truncate: bool,
+    /// ABI 4: TCP bind/connect.
     pub tcp_deny: bool,
-    /// `LANDLOCK_ACCESS_FS_IOCTL_DEV` (ABI ≥ 5).
+    /// ABI 5: `LANDLOCK_ACCESS_FS_IOCTL_DEV`.
     pub ioctl_dev: bool,
-    /// Abstract UNIX socket and signal scoping (ABI ≥ 6).
+    /// ABI 6: abstract UNIX socket and signal scoping.
     pub ipc_scoping: bool,
-    /// Audit logging of denials (ABI ≥ 7).
+    /// ABI 7: audit logging of denials.
     pub audit: bool,
-    /// Pathname UNIX socket control, `RESOLVE_UNIX` (ABI ≥ 9).
+    /// ABI 8: `LANDLOCK_RESTRICT_SELF_TSYNC` (all threads at once).
+    pub tsync: bool,
+    /// ABI 9: `LANDLOCK_ACCESS_FS_RESOLVE_UNIX` (pathname UNIX sockets).
     pub pathname_sockets: bool,
-    /// UDP bind/send control (ABI ≥ 10).
+    /// ABI 10: UDP bind and connect/send.
     pub udp: bool,
+    /// ABI 10: quiet rules (`LANDLOCK_ADD_RULE_QUIET`, per-rule log
+    /// suppression).
+    pub quiet_rules: bool,
+    /// ABI 11: no_new_privs flag for `landlock_restrict_self()`.
+    pub restrict_self_nnp: bool,
 }
 
-/// Minimum ABI per feature, in display order.
-pub const FEATURE_TABLE: [(&str, i32); 6] = [
-    ("TCP deny", 4),
+/// Display name and minimum ABI per feature, in [`Features::as_array`] order.
+pub const FEATURE_TABLE: [(&str, i32); 12] = [
+    ("filesystem access control", 1),
+    ("REFER (cross-directory rename/link)", 2),
+    ("TRUNCATE", 3),
+    ("TCP bind/connect", 4),
     ("IOCTL_DEV", 5),
-    ("IPC scoping", 6),
-    ("audit", 7),
-    ("pathname sockets", 9),
-    ("UDP", 10),
+    ("abstract-socket and signal scoping", 6),
+    ("audit logging", 7),
+    ("TSYNC (all threads)", 8),
+    ("pathname UNIX sockets (RESOLVE_UNIX)", 9),
+    ("UDP bind and connect/send", 10),
+    ("quiet rules (ADD_RULE_QUIET)", 10),
+    ("no_new_privs flag for restrict_self", 11),
 ];
 
 pub fn features_for(abi: Option<i32>) -> Features {
     let a = abi.unwrap_or(0);
     Features {
+        fs_base: a >= 1,
+        refer: a >= 2,
+        truncate: a >= 3,
         tcp_deny: a >= 4,
         ioctl_dev: a >= 5,
         ipc_scoping: a >= 6,
         audit: a >= 7,
+        tsync: a >= 8,
         pathname_sockets: a >= 9,
         udp: a >= 10,
+        quiet_rules: a >= 10,
+        restrict_self_nnp: a >= 11,
     }
 }
 
 impl Features {
     /// Same order as [`FEATURE_TABLE`].
-    pub fn as_array(&self) -> [bool; 6] {
+    pub fn as_array(&self) -> [bool; 12] {
         [
+            self.fs_base,
+            self.refer,
+            self.truncate,
             self.tcp_deny,
             self.ioctl_dev,
             self.ipc_scoping,
             self.audit,
+            self.tsync,
             self.pathname_sockets,
             self.udp,
+            self.quiet_rules,
+            self.restrict_self_nnp,
         ]
     }
 }
@@ -199,23 +236,32 @@ mod tests {
 
     #[test]
     fn feature_table() {
-        let f = |a| features_for(Some(a)).as_array();
-        assert_eq!(features_for(None).as_array(), [false; 6]);
-        assert_eq!(f(1), [false, false, false, false, false, false]);
-        assert_eq!(f(3), [false, false, false, false, false, false]);
-        assert_eq!(f(4), [true, false, false, false, false, false]);
-        assert_eq!(f(5), [true, true, false, false, false, false]);
-        assert_eq!(f(6), [true, true, true, false, false, false]);
-        assert_eq!(f(7), [true, true, true, true, false, false]);
-        assert_eq!(f(8), [true, true, true, true, false, false]);
-        assert_eq!(f(9), [true, true, true, true, true, false]);
-        assert_eq!(f(10), [true; 6]);
-        assert_eq!(f(11), [true; 6]);
+        let on = |a| -> Vec<&str> {
+            FEATURE_TABLE
+                .iter()
+                .zip(features_for(Some(a)).as_array())
+                .filter(|(_, on)| *on)
+                .map(|((n, _), _)| *n)
+                .collect()
+        };
+        assert_eq!(features_for(None).as_array(), [false; 12]);
+        assert_eq!(on(1), ["filesystem access control"]);
+        assert_eq!(on(3).len(), 3);
+        // Debian 13 (ABI 6): no audit, no TSYNC, no pathname sockets, no UDP.
+        assert_eq!(on(6).last(), Some(&"abstract-socket and signal scoping"));
+        assert!(features_for(Some(7)).audit && !features_for(Some(7)).tsync);
+        assert!(features_for(Some(8)).tsync && !features_for(Some(8)).pathname_sockets);
+        let f9 = features_for(Some(9));
+        assert!(f9.pathname_sockets && !f9.udp && !f9.quiet_rules);
+        let f10 = features_for(Some(10));
+        assert!(f10.udp && f10.quiet_rules && !f10.restrict_self_nnp);
+        assert_eq!(features_for(Some(11)).as_array(), [true; 12]);
+        assert_eq!(features_for(Some(12)).as_array(), [true; 12]);
     }
 
     #[test]
     fn feature_table_matches_features_for() {
-        for a in 0..=11 {
+        for a in 0..=12 {
             let expected: Vec<bool> = FEATURE_TABLE.iter().map(|&(_, min)| a >= min).collect();
             assert_eq!(features_for(Some(a)).as_array().to_vec(), expected);
         }
@@ -234,7 +280,8 @@ mod tests {
 
     #[test]
     fn newer_abi_is_strong_and_flagged() {
-        let s = interpret(Ok(11), Some(true));
+        assert!(!interpret(Ok(11), Some(true)).data.abi_newer_than_known);
+        let s = interpret(Ok(12), Some(true));
         assert_eq!(s.data.label, Label::Strong);
         assert!(s.data.abi_newer_than_known);
     }

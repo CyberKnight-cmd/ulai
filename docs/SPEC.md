@@ -130,14 +130,16 @@ that equal or contain a protected path (§6.3), and own paths that are too broad
 
 | Id | Grants | Strict | Guarded | Enforcement |
 |---|---|---|---|---|
-| `user-files` | Read/write all non-hidden entries of `$HOME` (except §6.3 exclusions) and removable media | no | yes | Landlock filesystem rules |
+| `user-files` | Read/write all non-hidden entries of `$HOME` (except §6.3 exclusions) and removable media | no | yes | Landlock filesystem rules (rename/link control needs `REFER`, ABI ≥ 2; truncation control needs `TRUNCATE`, ABI ≥ 3) |
 | `network` | TCP and UDP | no | yes | Network rights left unhandled; denial needs ABI ≥ 4 (TCP) and ≥ 10 (UDP) |
 | `gpu` | `/dev/dri/*`, `/dev/nvidia*`, including ioctls | yes | yes | Filesystem rules (+ `IOCTL_DEV`, ABI ≥ 5) |
-| `audio` | PipeWire and PulseAudio sockets. **Includes microphone access** (§14 O4) | no | yes | Socket rule; denial needs ABI ≥ 9 |
+| `audio` | PipeWire and PulseAudio sockets. **Includes microphone access** (§14 O4) | no | yes | Socket rule (`RESOLVE_UNIX`); denial needs ABI ≥ 9, Linux 7.1+ |
 | `notifications` | Notifications service and portal | yes | yes | D-Bus proxy (§7) |
-| `system-bus` | System D-Bus (privileged actions remain behind polkit) | no | yes | Socket rule; denial needs ABI ≥ 9 |
+| `system-bus` | System D-Bus (privileged actions remain behind polkit) | no | yes | Socket rule (`RESOLVE_UNIX`); denial needs ABI ≥ 9, Linux 7.1+ |
 
 The Wayland socket is always available. Denying it is meaningless for GUI apps.
+
+ABI numbers refer to the feature table in §6.2.
 
 ### 5.2 Sensitive permissions (never granted by default)
 
@@ -170,12 +172,38 @@ an existing default) are consented at install and written by the handler.
 
 | Landlock ABI | Label | Meaning |
 |---|---|---|
-| ≥ 9 | **Strong** | Pathname sockets are controllable: the session bus can be forced through the proxy, and X11 can be blocked |
+| ≥ 9 (Linux 7.1+) | **Strong** | Pathname sockets are controllable: the session bus can be forced through the proxy, and X11 can be blocked |
 | 1–8 | **Weak** | Files are protected against honest and naive access, but a malicious app can reach the real session bus or X11 socket. Not real isolation (ADR-013) |
 | unavailable | **None** | Strict and Guarded cannot run; fail closed (§6.6) |
 
-The handler MUST show the label on the card and in app settings. **[verify]**
-the ABI level of the kernels in the test matrix.
+The handler MUST show the label on the card and in app settings.
+
+Measured on 2026-10-21 (evidence table in RESEARCH.md): Arch with Linux 7.2 is
+Strong (ABI 10). Ubuntu 24.04 HWE and 26.04 (Linux 7.0, ABI 8), Fedora 44
+(6.19, ABI 7) and Debian 13 (6.12, ABI 6) are all Weak. openSUSE Tumbleweed and
+Linux Mint are still to be measured.
+
+**What each ABI adds.** Constants come from `include/uapi/linux/landlock.h`;
+ULAI's copies of items missing from the `landlock` crate are in
+`ulai-core/src/sys.rs` (`uapi`) and are tested against the installed header.
+
+| ABI | Adds | First kernel |
+|---|---|---|
+| 1 | Base filesystem access rights | 5.13 |
+| 2 | `LANDLOCK_ACCESS_FS_REFER` | 5.19 |
+| 3 | `LANDLOCK_ACCESS_FS_TRUNCATE` | 6.2 |
+| 4 | TCP bind and connect (`LANDLOCK_ACCESS_NET_{BIND,CONNECT}_TCP`) | 6.7 |
+| 5 | `LANDLOCK_ACCESS_FS_IOCTL_DEV` | 6.10 |
+| 6 | Abstract UNIX socket and signal scoping (`LANDLOCK_SCOPE_*`) | 6.12 |
+| 7 | Audit logging of denials (`LANDLOCK_RESTRICT_SELF_LOG_*`) | 6.15 |
+| 8 | `LANDLOCK_RESTRICT_SELF_TSYNC` (apply to all threads) | 7.0 |
+| 9 | `LANDLOCK_ACCESS_FS_RESOLVE_UNIX` (pathname UNIX sockets) | 7.1 |
+| 10 | UDP bind and connect/send (`LANDLOCK_ACCESS_NET_BIND_UDP`, `…_CONNECT_SEND_UDP`); quiet rules (`quiet_*` ruleset fields, `LANDLOCK_ADD_RULE_QUIET`) | 7.2 (inferred: 7.2.9 reports 10) |
+| 11 | no_new_privs flag for `landlock_restrict_self()` | after 7.2 (not in the 7.2 header) |
+
+Kernel versions for ABI 1–9 are from the kernel commits linked in the
+`landlock` crate's documentation. The ABI 10 quiet rules are stated in the 7.2
+header but were not in the original version of this table.
 
 ### 6.3 Guarded policy construction (normative)
 

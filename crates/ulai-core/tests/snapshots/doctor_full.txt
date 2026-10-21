@@ -9,12 +9,18 @@ Linux security modules
 
 Landlock
   ✓ ABI 10 → protection label: Strong
-  ✓ TCP deny (ABI ≥ 4)
+  ✓ filesystem access control (ABI ≥ 1)
+  ✓ REFER (cross-directory rename/link) (ABI ≥ 2)
+  ✓ TRUNCATE (ABI ≥ 3)
+  ✓ TCP bind/connect (ABI ≥ 4)
   ✓ IOCTL_DEV (ABI ≥ 5)
-  ✓ IPC scoping (ABI ≥ 6)
-  ✓ audit (ABI ≥ 7)
-  ✓ pathname sockets (ABI ≥ 9)
-  ✓ UDP (ABI ≥ 10)
+  ✓ abstract-socket and signal scoping (ABI ≥ 6)
+  ✓ audit logging (ABI ≥ 7)
+  ✓ TSYNC (all threads) (ABI ≥ 8)
+  ✓ pathname UNIX sockets (RESOLVE_UNIX) (ABI ≥ 9)
+  ✓ UDP bind and connect/send (ABI ≥ 10)
+  ✓ quiet rules (ADD_RULE_QUIET) (ABI ≥ 10)
+  ✗ no_new_privs flag for restrict_self (ABI ≥ 11)
 
 User namespaces
     max_user_namespaces = 94304

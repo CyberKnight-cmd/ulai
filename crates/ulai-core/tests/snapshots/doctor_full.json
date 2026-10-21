@@ -28,12 +28,18 @@
     "label": "strong",
     "abi_newer_than_known": false,
     "features": {
+      "fs_base": true,
+      "refer": true,
+      "truncate": true,
       "tcp_deny": true,
       "ioctl_dev": true,
       "ipc_scoping": true,
       "audit": true,
+      "tsync": true,
       "pathname_sockets": true,
-      "udp": true
+      "udp": true,
+      "quiet_rules": true,
+      "restrict_self_nnp": false
     },
     "notes": []
   },

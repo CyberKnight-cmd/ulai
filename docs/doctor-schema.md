@@ -56,8 +56,8 @@ as unknown with a reason; it never fails the tool.
 | `abi` | integer or null | ABI the kernel reports |
 | `errno` | string or null | Set when the syscall failed |
 | `label` | `"strong"` (ABI ≥ 9), `"weak"` (1–8), `"none"` | SPEC §6.2. An unknown ABI gives `"none"` (fail closed) |
-| `abi_newer_than_known` | bool | The kernel's ABI is above the newest one this ULAI knows (10) |
-| `features` | object of bools | `tcp_deny` (≥ 4), `ioctl_dev` (≥ 5), `ipc_scoping` (≥ 6), `audit` (≥ 7), `pathname_sockets` (≥ 9), `udp` (≥ 10) |
+| `abi_newer_than_known` | bool | The kernel's ABI is above the newest one this ULAI knows (11) |
+| `features` | object of bools | One key per SPEC §6.2 feature: `fs_base` (≥ 1), `refer` (≥ 2), `truncate` (≥ 3), `tcp_deny` (≥ 4), `ioctl_dev` (≥ 5), `ipc_scoping` (≥ 6), `audit` (≥ 7), `tsync` (≥ 8), `pathname_sockets` (≥ 9), `udp` (≥ 10), `quiet_rules` (≥ 10), `restrict_self_nnp` (≥ 11) |
 | `notes` | string[] | Contradictions with the LSM list |
 
 ### `userns` — unprivileged user namespaces
@@ -165,8 +165,10 @@ Abridged output from the Arch dev host (2026-10-21):
     "status": "ok", "errors": [],
     "state": "available", "abi": 10, "errno": null, "label": "strong",
     "abi_newer_than_known": false,
-    "features": { "tcp_deny": true, "ioctl_dev": true, "ipc_scoping": true,
-                  "audit": true, "pathname_sockets": true, "udp": true },
+    "features": { "fs_base": true, "refer": true, "truncate": true,
+                  "tcp_deny": true, "ioctl_dev": true, "ipc_scoping": true,
+                  "audit": true, "tsync": true, "pathname_sockets": true,
+                  "udp": true, "quiet_rules": true, "restrict_self_nnp": false },
     "notes": []
   }
 }
