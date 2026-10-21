@@ -103,6 +103,26 @@ source is named so it can be found; add links as they are re-verified.
 - Claude Code reads CLAUDE.md, which imports AGENTS.md:
   https://code.claude.com/docs/en/claude-md
 
+## Evidence: systems tested with `ulai doctor`
+
+All six systems were measured on 2026-10-21 with the same static `ulai` binary
+(sha256 `5874501a…`, built from commit `0f6c8d7`), run as an unprivileged user.
+Details for each system are in the experiment log below.
+
+| System | Kernel | Landlock ABI | Label | User-namespace probe | FUSE | libc |
+|---|---|---|---|---|---|---|
+| Arch Linux (dev host, real hardware) | 7.2.9-arch1-1 | 10 | Strong | all 6 steps ok | /dev/fuse; fusermount3 + fusermount; libfuse2 | glibc 2.44 |
+| Ubuntu 24.04.5 LTS (real hardware, HWE kernel) | 7.0.0-38-generic | 8 | Weak | fails at `setgroups` (EACCES); AppArmor restriction on | /dev/fuse; fusermount3 + fusermount; no libfuse2 | glibc 2.39 |
+| Debian 13 (VM) | 6.12.113+deb13-cloud-amd64 | 6 | Weak | all 6 steps ok | /dev/fuse; no fusermount; no libfuse2 | glibc 2.41 |
+| Fedora 44 Cloud (VM) | 6.19.10-300.fc44.x86_64 | 7 | Weak | all 6 steps ok | /dev/fuse; fusermount3; no libfuse2 | glibc 2.43 |
+| Ubuntu 26.04.1 LTS (VM) | 7.0.0-38-generic | 8 | Weak | fails at `setgroups` (EACCES); AppArmor restriction on | /dev/fuse; fusermount3 + fusermount; no libfuse2 | glibc 2.43 |
+| GitHub Actions `ubuntu-latest` (Ubuntu 24.04) | 7.0.0-1017-azure | 8 | Weak | fails at `setgroups` (EACCES); AppArmor restriction on | /dev/fuse; fusermount3 + fusermount; no libfuse2 | glibc 2.39 |
+
+The userns probe steps, in order, are `unshare`, `setgroups`, `uid_map`,
+`gid_map`, `mount_private` and `mount_tmpfs`. "fusermount3 + fusermount" means
+both are present and setuid root. The VMs are headless cloud images with no
+desktop session.
+
 ## Experiment log
 
 Add one entry per experiment, in this format:
