@@ -13,41 +13,43 @@ User namespaces
   ? probe: unknown (probe child failed: not configured)
 
 Yama
-  ✗ not active (no ptrace_scope sysctl)
+  ⚠ not active (no ptrace_scope sysctl)
 
-FUSE
-  ✗ /dev/fuse
-  ✗ fusermount3: not found
-  ✗ fusermount: not found
-  ✗ libfuse.so.2: not found
+FUSE (not used by ULAI)
+    /dev/fuse: absent
+    fusermount3: not found
+    fusermount: not found
+  ⚠ libfuse.so.2: not found (type 2 AppImages run directly need it; ULAI does not)
 
 Host C library
   ? unknown: getconf not found, and no musl loader in /lib
 
 Session
-  ✗ XDG_SESSION_TYPE unset
-  ✗ WAYLAND_DISPLAY unset
-  ✗ DISPLAY unset
-  ✗ XDG_CURRENT_DESKTOP unset
+    XDG_SESSION_TYPE unset
+    WAYLAND_DISPLAY unset
+    DISPLAY unset
+    XDG_CURRENT_DESKTOP unset
 
 GPU
-  ✗ no DRM cards
-  ✗ render nodes: none
-  ✗ Vulkan ICDs: none
-  ✗ EGL vendors: none
-  ✗ libvulkan.so.1: not found (via directory scan)
-  ✗ libEGL.so.1: not found (via directory scan)
-  ✗ libGL.so.1: not found (via directory scan)
+  ⚠ no DRM cards (headless: GUI apps get no GPU)
+  ⚠ render nodes: none
+  ⚠ Vulkan ICDs: none
+  ⚠ EGL vendors: none
+  ✗ libvulkan.so.1: not found (via directory scan; native-mode apps that need it fail)
+  ✗ libEGL.so.1: not found (via directory scan; native-mode apps that need it fail)
+  ✗ libGL.so.1: not found (via directory scan; native-mode apps that need it fail)
 
 xdg-dbus-proxy
   ✗ not installed (needed for Strict and Guarded, SPEC §7)
 
 XDG directories
-  ✓ XDG_DATA_DIRS=/usr/local/share:/usr/share
-  ✓ XDG_CONFIG_DIRS=/etc/xdg
+    XDG_DATA_DIRS=/usr/local/share:/usr/share
+    XDG_CONFIG_DIRS=/etc/xdg
   ✗ XDG_RUNTIME_DIR unset (needed for the D-Bus proxy socket)
   ? home: unknown (HOME unset or not absolute)
   ? config_home: unknown (XDG_CONFIG_HOME unset and HOME unknown)
   ? data_home: unknown (XDG_DATA_HOME unset and HOME unknown)
   ? state_home: unknown (XDG_STATE_HOME unset and HOME unknown)
   ? cache_home: unknown (XDG_CACHE_HOME unset and HOME unknown)
+
+✓ favourable for ULAI   ✗ unfavourable   ⚠ worth knowing   ? unknown
