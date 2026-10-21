@@ -1,0 +1,72 @@
+# fmt, clippy, tests and the static musl build. The toolchain (stable, plus
+# the musl target) comes from rust-toolchain.toml. No GTK: ulai-handler
+# arrives in M4.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: unsafe only in ulai-core/src/sys.rs
+        run: |
+          if grep -rnE --include='*.rs' 'unsafe[[:space:]]*(\{|fn|impl|extern|trait)' crates \
+              | grep -v '^crates/ulai-core/src/sys.rs:'; then
+            echo "::error::unsafe code outside crates/ulai-core/src/sys.rs"
+            exit 1
+          fi
+      - name: Test
+        # Landlock-dependent tests are #[ignore]d; run them locally with
+        # `cargo test -- --ignored` on a kernel with Landlock enabled.
+        run: cargo test --workspace
+
+  musl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build static binaries
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl -p ulai-cli -p ulai-run
+      - name: Check they are static
+        run: |
+          for b in ulai ulai-run; do
+            f=target/x86_64-unknown-linux-musl/release/$b
+            file "$f"
+            if readelf -lW "$f" | grep -q INTERP || readelf -dW "$f" | grep -q NEEDED; then
+              echo "::error::$b is not statically linked"
+              exit 1
+            fi
+          done
+      - name: Smoke test ulai doctor
+        run: |
+          b=target/x86_64-unknown-linux-musl/release/ulai
+          "$b" doctor
+          "$b" doctor --json > doctor.json
+          python3 -c 'import json,sys; d=json.load(open("doctor.json")); sys.exit(d["schema"] != 1)'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ulai-x86_64-linux-musl
+          path: |
+            target/x86_64-unknown-linux-musl/release/ulai
+            target/x86_64-unknown-linux-musl/release/ulai-run
+            doctor.json
