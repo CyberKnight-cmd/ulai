@@ -15,9 +15,44 @@ use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-/// `LANDLOCK_CREATE_RULESET_VERSION` from `<linux/landlock.h>`. Not exported
-/// by the `libc` crate.
-const LANDLOCK_CREATE_RULESET_VERSION: libc::c_uint = 1 << 0;
+/// Landlock uapi items that neither `libc` nor the `landlock` crate (0.4.7)
+/// provide. Every value is copied from `include/uapi/linux/landlock.h` of
+/// Linux 7.2 (Arch `linux-api-headers` 7.2-1); `tests::uapi_matches_header`
+/// re-checks them against the installed header. Never edit a value by hand.
+///
+/// `landlock` 0.4.7 covers ABI 1–9 (including the ABI 7 logging flags, ABI 8
+/// `TSYNC` and ABI 9 `RESOLVE_UNIX`). ABI 10 is missing upstream: UDP is
+/// rust-landlock PR #140 and `ADD_RULE_QUIET` is PR #144. The ABI 11
+/// `restrict_self` no_new_privs flag is not in the 7.2 header and is not
+/// defined here until a header that has it is available.
+pub mod uapi {
+    /// `landlock_create_ruleset()` flag: return the ABI version.
+    pub const LANDLOCK_CREATE_RULESET_VERSION: u32 = 1 << 0;
+
+    /// ABI 10: bind a UDP socket to a local port.
+    pub const LANDLOCK_ACCESS_NET_BIND_UDP: u64 = 1 << 2;
+    /// ABI 10: set the remote port of a UDP socket (connect or send).
+    pub const LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP: u64 = 1 << 3;
+    /// ABI 10: `landlock_add_rule()` flag marking an object "quiet" for the
+    /// `quiet_*` fields of [`RulesetAttrV10`].
+    pub const LANDLOCK_ADD_RULE_QUIET: u32 = 1 << 0;
+
+    /// `struct landlock_ruleset_attr` as of ABI 10 (Linux 7.2 header). The
+    /// kernel accepts shorter, older layouts; the `quiet_*` fields need
+    /// ABI ≥ 10.
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+    pub struct RulesetAttrV10 {
+        pub handled_access_fs: u64,
+        pub handled_access_net: u64,
+        pub scoped: u64,
+        pub quiet_access_fs: u64,
+        pub quiet_access_net: u64,
+        pub quiet_scoped: u64,
+    }
+}
+
+use uapi::LANDLOCK_CREATE_RULESET_VERSION;
 
 /// The raw Landlock ABI version: `landlock_create_ruleset(NULL, 0,
 /// LANDLOCK_CREATE_RULESET_VERSION)`.
@@ -154,6 +189,56 @@ mod tests {
     fn c_chars_without_nul_use_whole_slice() {
         let raw: Vec<libc::c_char> = b"x86_64".iter().map(|&b| b as libc::c_char).collect();
         assert_eq!(c_chars_to_string(&raw), "x86_64");
+    }
+
+    /// Compares every constant in [`uapi`] with the installed kernel header.
+    /// Constants an older header does not define yet are skipped and named.
+    #[test]
+    fn uapi_matches_header() {
+        let Ok(header) = std::fs::read_to_string("/usr/include/linux/landlock.h") else {
+            eprintln!("skipped: /usr/include/linux/landlock.h not installed");
+            return;
+        };
+        let defined = |name: &str| -> Option<u64> {
+            let line = header
+                .lines()
+                .find(|l| l.split_whitespace().take(2).eq(["#define", name]))?;
+            let expr = line.split_whitespace().skip(2).collect::<String>();
+            let inner = expr.trim_start_matches('(').trim_end_matches(')');
+            let (one, shift) = inner.split_once("<<")?;
+            assert!(one.starts_with('1'), "unexpected form for {name}: {line}");
+            Some(1u64 << shift.parse::<u32>().expect("shift"))
+        };
+        for (name, value) in [
+            (
+                "LANDLOCK_CREATE_RULESET_VERSION",
+                u64::from(uapi::LANDLOCK_CREATE_RULESET_VERSION),
+            ),
+            (
+                "LANDLOCK_ACCESS_NET_BIND_UDP",
+                uapi::LANDLOCK_ACCESS_NET_BIND_UDP,
+            ),
+            (
+                "LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP",
+                uapi::LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP,
+            ),
+            (
+                "LANDLOCK_ADD_RULE_QUIET",
+                u64::from(uapi::LANDLOCK_ADD_RULE_QUIET),
+            ),
+        ] {
+            match defined(name) {
+                Some(h) => assert_eq!(h, value, "{name} differs from the header"),
+                None => eprintln!("skipped: {name} not in this header (older kernel headers)"),
+            }
+        }
+    }
+
+    #[test]
+    fn ruleset_attr_v10_layout() {
+        // Six __u64 fields, no padding.
+        assert_eq!(std::mem::size_of::<uapi::RulesetAttrV10>(), 48);
+        assert_eq!(std::mem::align_of::<uapi::RulesetAttrV10>(), 8);
     }
 
     /// Talks to the real kernel; run locally with `cargo test -- --ignored`.

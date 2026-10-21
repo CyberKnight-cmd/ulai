@@ -12,6 +12,9 @@
 pub mod host;
 mod sys;
 
+/// Landlock uapi items missing from `libc` and the `landlock` crate.
+pub use sys::uapi as landlock_uapi;
+
 pub mod doctor;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
