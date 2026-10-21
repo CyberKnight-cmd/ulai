@@ -205,3 +205,14 @@ Add one entry per experiment, in this format:
     135 s for Fedora and 112 s for Ubuntu 26.04, including their downloads.
   - **Not covered:** desktop sessions and real GPUs in these guests,
     openSUSE Tumbleweed and Linux Mint.
+- 2026-10-21 · GitHub Actions `ubuntu-latest` runner (Ubuntu 24.04, kernel
+  7.0.0-1017-azure) · first CI run of the M0 workflow and the doctor smoke
+  test · run 39550362723
+  - fmt, clippy, the unsafe check, 91 tests (+1 ignored) and the static musl
+    build all passed.
+  - The runner's doctor output: **ABI 8 → Weak**,
+    `apparmor_restrict_unprivileged_userns=1`, userns probe failing at
+    `setgroups` with EACCES (the same pattern as on real Ubuntu), glibc 2.39,
+    every section `ok`.
+  - So the CLI integration tests, including the real re-exec probe, pass on a
+    restricted Ubuntu kernel as well as on Arch.

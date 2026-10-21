@@ -5,10 +5,9 @@ release and a short results entry in the experiment log in RESEARCH.md.
 
 ## M0 — Foundations and `ulai doctor` (~1 week)
 
-- [ ] Cargo workspace with the crates listed in AGENTS.md. CI runs fmt, clippy
-      (`-D warnings`) and tests.
-      *(2026-10-21: workspace done; the workflow is written and every step was
-      run locally, but it has not run on GitHub yet.)*
+- [x] Cargo workspace with the crates listed in AGENTS.md. CI runs fmt, clippy
+      (`-D warnings`) and tests. *(First green GitHub Actions run on
+      2026-10-21: run 39550362723.)*
 - [x] `ulai doctor` reports:
   - kernel version, active LSMs, Landlock ABI and the resulting protection
     label (SPEC §6.2);
@@ -22,10 +21,10 @@ release and a short results entry in the experiment log in RESEARCH.md.
 **Done when:** it runs on the Arch dev host and three VMs, and the output has
 been checked by hand.
 
-*Status (2026-10-21): "done when" is met. Output was checked by hand on the
+*Status (2026-10-21): **all M0 tasks done.** Output was checked by hand on the
 Arch dev host, on a real Ubuntu 24.04 machine, and in Debian 13, Fedora 44 and
-Ubuntu 26.04 VMs (`scripts/vm-doctor.sh`). What remains is the first
-workflow item: the CI workflow has not yet run on GitHub.*
+Ubuntu 26.04 VMs (`scripts/vm-doctor.sh`). CI is green on GitHub. Not yet
+tagged as a release.*
 
 ## M1 — Inspect, validate, verify (~2 weeks)
 
