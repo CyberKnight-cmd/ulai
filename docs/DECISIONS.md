@@ -66,3 +66,11 @@ unsandboxed process) or the X11 socket. Options: (a) label it "weak isolation"
 and continue; (b) use a minimal mount namespace via unprivileged user namespaces
 where allowed, to hide the real sockets; (c) refuse Guarded. Decide after the
 M2 measurements. *Open.*
+
+**ADR-014 — The CLI and launcher ship as static musl binaries; they depend
+only on the kernel.** `ulai` and `ulai-run` are built for
+`x86_64-unknown-linux-musl` as static executables. One file can be copied
+into any test VM or distribution, nothing about the host libc is inferred
+from our own libc, and neither tool needs `dlopen`. `ulai-handler` is out of
+scope (GTK must link the host's libraries). aarch64 musl builds follow in M6.
+*Accepted* (2026-10-21).

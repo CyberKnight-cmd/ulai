@@ -7,7 +7,9 @@ release and a short results entry in the experiment log in RESEARCH.md.
 
 - [ ] Cargo workspace with the crates listed in AGENTS.md. CI runs fmt, clippy
       (`-D warnings`) and tests.
-- [ ] `ulai doctor` reports:
+      *(2026-10-21: workspace done; the workflow is written and every step was
+      run locally, but it has not run on GitHub yet.)*
+- [x] `ulai doctor` reports:
   - kernel version, active LSMs, Landlock ABI and the resulting protection
     label (SPEC §6.2);
   - unprivileged user-namespace status, including the AppArmor restriction;
@@ -15,10 +17,13 @@ release and a short results entry in the experiment log in RESEARCH.md.
   - GPU vendor and driver (Mesa or NVIDIA), and whether the Vulkan and EGL
     loaders are present;
   - whether xdg-dbus-proxy is installed, and the XDG directories.
-- [ ] Human-readable output and `--json`.
+- [x] Human-readable output and `--json` (schema: `docs/doctor-schema.md`).
 
 **Done when:** it runs on the Arch dev host and three VMs, and the output has
 been checked by hand.
+
+*Status (2026-10-21): checked by hand on the Arch dev host only. The three VM
+runs are still to do, so M0 is not done.*
 
 ## M1 — Inspect, validate, verify (~2 weeks)
 

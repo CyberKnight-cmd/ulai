@@ -39,6 +39,7 @@ install, uninstall and signed updates.
 - [Roadmap and milestones](docs/ROADMAP.md)
 - [Design decisions](docs/DECISIONS.md)
 - [Research notes and prior art](docs/RESEARCH.md)
+- [`ulai doctor --json` schema](docs/doctor-schema.md)
 - Contributors and coding agents: start with [AGENTS.md](AGENTS.md)
 
 ## License

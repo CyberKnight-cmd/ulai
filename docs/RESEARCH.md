@@ -107,3 +107,39 @@ source is named so it can be found; add links as they are re-verified.
 
 Add one entry per experiment, in this format:
 `YYYY-MM-DD · system and kernel · what was tested · result · commit link`.
+
+- 2026-10-21 · Arch Linux dev host, kernel 7.2.9-arch1-1, x86_64, NVIDIA
+  open kernel module 615.78.08, COSMIC on Wayland · M0 `ulai doctor`, static
+  musl build · commit e35e62b
+  - **Landlock:** the raw `landlock_create_ruleset(NULL, 0, VERSION)` returns
+    **ABI 10**, so the label is **Strong** and every SPEC feature is
+    enforceable. The active LSMs are `capability,landlock,lockdown,yama,bpf`.
+  - **`landlock` crate 0.4.7 cannot report this.** `LandlockStatus::current()`
+    is private, a status is only returned after creating a ruleset or
+    restricting yourself, and the `ABI` enum stops at V9 (10 maps to V9). Hence
+    the raw syscall in `ulai-core/src/sys.rs`.
+  - **Not verified:** the feature→ABI table (TCP 4, IOCTL_DEV 5, scoping 6,
+    audit 7, pathname sockets 9, UDP 10) comes from SPEC. The 7.2 uapi header
+    defines the `RESOLVE_UNIX` and UDP rights, but I did not check which ABI
+    introduced each one against kernel sources.
+  - **User namespaces:** `max_user_namespaces=94304`,
+    `unprivileged_userns_clone=1`, no AppArmor sysctl. As uid 1000, all six
+    probe steps succeed: unshare, setgroups, uid_map, gid_map, `MS_PRIVATE`
+    on `/`, and a tmpfs mount.
+    - The host's `/proc/self/mountinfo` was identical before and after the
+      probe (27 mounts).
+    - The temporary probe directory was removed.
+    - The shell was confirmed to run in the initial user namespace, with no
+      seccomp and no `no_new_privs`.
+  - **Network:** `strace -f -e trace=%network ulai doctor --json` shows zero
+    network syscalls, including in child processes.
+  - **Static musl build:** `ulai` is a 1.2 MB static-pie and `ulai-run` is
+    0.4 MB. Neither has `PT_INTERP` or `NEEDED`.
+    - Output is byte-identical to the glibc debug build.
+    - It reports the host's glibc 2.44, so the value is not inferred from our
+      own libc.
+    - It also works under `env -i`, with no `PATH`.
+  - **Speed:** 10 runs of `doctor --json` took 49–51 ms (median 50 ms),
+    including the child-process probe.
+  - **Not done:** the three test-matrix VMs (M0's "done when"), and running
+    the CI workflow on GitHub.
