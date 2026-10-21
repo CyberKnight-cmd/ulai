@@ -29,14 +29,17 @@ tagged as a release.*
 ## M1 — Inspect, validate, verify (~2 weeks)
 
 - [ ] ELF parsing, AppImage magic and image offset (SPEC §3.1). SquashFS listing
-      and reading in-process: no FUSE and no execution.
+      and reading in-process: no FUSE and no execution. DwarFS images are
+      detected; `inspect` and `validate` report them as unsupported (exit 5),
+      while `verify` works on them (SPEC §3.2, §16).
 - [ ] Manifest schema, and `ulai inspect` (human-readable and JSON).
 - [ ] Signature verification compatible with upstream AppImage signing, with
       test vectors from upstream-signed files. Resolves SPEC §14 O9.
 - [ ] `ulai validate` checks:
   - magic, manifest schema and permission vocabulary;
   - `own_paths` rules (SPEC §4);
-  - no excluded libraries in the image (SPEC §11.1);
+  - no excluded libraries in the image, using ULAI's own list (SPEC §11.1);
+    report GLIBCXX/CXXABI needs and whether libstdc++ is bundled;
   - highest glibc symbol version ≤ `glibc_floor`;
   - no RPATH/RUNPATH pointing at absolute host paths;
   - the entry point exists and is executable;
@@ -74,6 +77,10 @@ decompression bomb), without executing any of them.
       allowlist, and update SPEC.
 
 ## M3 — Install, store, integration (~2 weeks)
+
+- [ ] **Prerequisite, a hard requirement before any other M3 work:** full
+      in-process DwarFS reading (listing and file contents) for legacy
+      AppImages, with the same limits and hostile-file tests as SquashFS.
 
 - [ ] Safe extraction (SPEC §8 rules) into the content-addressed store, with
       hardlinks and garbage collection.

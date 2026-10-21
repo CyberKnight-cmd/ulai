@@ -29,8 +29,10 @@ A ULAI file MUST:
 
 1. Be a valid AppImage type 2: an ELF executable with magic `0x414902` at
    offset 8, followed by an appended filesystem image that its runtime can mount.
-2. Use SquashFS for the image (zstd compression RECOMMENDED). DwarFS MAY be
-   allowed in a later version.
+2. Use SquashFS for the image (zstd compression RECOMMENDED). Legacy
+   AppImages MAY use DwarFS (magic `DWARFS`, used by uruntime/AnyLinux);
+   handlers read it in-process (§3.5), but ULAI files themselves stay
+   SquashFS.
 3. Contain at the image root: `AppRun` (the entry point), exactly one `.desktop`
    file, and an icon, following AppDir conventions.
 4. Contain `/.ulai/manifest.json` (§4).
@@ -40,23 +42,59 @@ A ULAI file MUST:
 A ULAI file SHOULD use the extension `.ulai`. Handlers MUST NOT rely on the
 extension: detection is by AppImage magic plus manifest presence.
 
-### 3.1 Image offset
+### 3.1 Image offset and sections
 
 The image starts where the ELF ends: `offset = e_shoff + e_shentsize × e_shnum`,
-which is how AppImage tooling computes it. **[verify]** against the upstream
-type 2 runtime for both ELF32 and ELF64.
+which is how AppImage tooling computes it. **[verify: S1/S4]** against the
+upstream type 2 runtime for both ELF32 and ELF64.
+
+- Compute the offset with checked arithmetic; overflow, or an offset past the
+  end of the file, makes the file corrupt.
+- The filesystem magic (`hsqs` for SquashFS, `DWARFS` for DwarFS) MUST start
+  exactly at the offset. Handlers MUST NOT scan for it.
+- `.sha256_sig`, `.sig_key`, `.digest_md5` and `.upd_info` MUST each appear at
+  most once. Each MUST lie entirely inside the file, MUST NOT overlap another
+  section, and MUST NOT overlap the filesystem image. Otherwise the file is
+  corrupt.
 
 ### 3.2 Signature
 
 - Use the AppImage signature sections. `.sha256_sig` holds an ASCII-armored
-  OpenPGP detached signature over the SHA-256 digest of the whole file, computed
-  with `.sha256_sig` zero-filled. `.sig_key` holds the publisher's public key.
+  OpenPGP detached signature. `.sig_key` holds the publisher's public key.
   Ed25519 keys are RECOMMENDED.
-- **[verify]** whether upstream also zero-fills `.sig_key` when computing the
-  digest. Implement exactly what upstream `appimagetool` does, and add test
-  vectors made from upstream-signed files.
+- **Digest.** SHA-256 over the whole file, with the byte ranges of
+  `.sha256_sig` **and** `.sig_key` zero-filled. Zero each section's range
+  independently: never assume the two sections are contiguous. `.digest_md5`
+  and every other byte are hashed unchanged.
+  - *Discrepancy:* the AppImage specification text mentions zeroing only
+    `.sha256_sig`. Real tools zero both: go-appimage; AppImageKit's validate
+    after the fix for issue #949; Krita's `validate_appimage_signature.sh`.
+    ULAI follows the tools.
+- **What is signed.** The OpenPGP signature covers the digest text that the
+  tooling writes (the hex SHA-256), not the AppImage itself. **[verify: S1]**
+  the exact bytes (hex case, trailing newline), the signature type (binary
+  0x00 or text 0x01) and the hash algorithm used by upstream `appimagetool`
+  and by go-appimage. If they differ, handlers accept both.
+- **Signature policy:**
+  - Hash algorithms: SHA-256, SHA-384 and SHA-512 are accepted; SHA-1, MD5
+    and anything else are rejected.
+  - Keys: RSA of at least 2048 bits; Ed25519, both the legacy EdDSA form and
+    the RFC 9580 Ed25519 algorithm. Any other algorithm is unsupported.
+  - `.sig_key` MUST contain exactly one primary key, and its self-signature
+    MUST verify. If a subkey made the signature, its binding signature MUST
+    verify and it MUST carry the signing flag.
+  - A revoked key makes the signature invalid. An expired key gives a valid
+    result with a warning; the pinning policy (M3) decides what to do with it.
+  - Fingerprints are always shown in full (v4: 40 hex digits; v6: 64), never
+    as short key IDs.
+- **Meaning of "valid".** A valid signature only shows that the file was
+  signed by the key embedded in it. Trust comes from pinning (below).
+- **Independence.** Verification needs only the ELF and its sections, not the
+  filesystem reader. It therefore works on every AppImage whose ELF and
+  sections parse, including DwarFS ones.
 - Verification MUST complete before any other content of the file is trusted or
-  displayed, including the manifest and the icon.
+  displayed, including the manifest and the icon. Content shown from an
+  unsigned or invalid file is labelled as not authenticated.
 - Trust is per app id (trust on first use). The first successfully verified key
   is pinned. Later versions MUST be signed by the pinned key; a different key
   blocks the update and shows the old and new fingerprints.
@@ -65,6 +103,28 @@ type 2 runtime for both ELF32 and ELF64.
 
 `.upd_info` MAY carry update information in the existing AppImage formats (for
 example zsync URLs). Downloaded updates MUST pass §3.2 with the pinned key.
+
+### 3.5 Reading untrusted files
+
+Applies to every file being inspected, validated, verified or installed.
+
+- Never execute any part of it (AGENTS rule 1). Parse ELF, SquashFS and DwarFS
+  in-process.
+- Open the file once and read everything, including the digest, through that
+  one open file.
+- Use checked arithmetic for every offset and size.
+- Inside the image, reject `..` components, absolute paths and NUL bytes.
+  Symlinks resolve only inside the image: absolute targets resolve against the
+  image root, never against the host filesystem. A hop limit turns symlink
+  loops into errors.
+- Enforce limits on total bytes, file count and compression ratio.
+- Do not decode icons before M4; report only their type (by magic) and size.
+- **Terminal output.** Every string taken from the file (names, paths,
+  manifest fields, desktop-entry fields) is untrusted. Before printing it to
+  a terminal, escape C0 and C1 control characters and the Unicode bidi
+  controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069, so that a
+  hostile file cannot fake verdict lines or spoof a fingerprint. JSON output
+  stays raw, since JSON escaping already handles it.
 
 ### 3.4 Runtime modes
 
@@ -119,7 +179,11 @@ The manifest's `runtime_mode` declares one of:
 | `own_paths` | no | Extra per-app directories under `$HOME` (§6.3 rules apply) |
 | `integrations` | no | Written by the handler at install, with consent (ADR-011) |
 
-Unknown fields MUST be ignored (forward compatibility). `ulai validate` MUST
+Unknown fields MUST be ignored (forward compatibility). The manifest is at
+most 64 KiB; larger files are rejected before parsing. Duplicate keys at any
+level are rejected, so that different JSON parsers cannot read the same file
+differently. The JSON Schema is published as
+`schemas/manifest-0.1.schema.json` (MIT, ADR-015). `ulai validate` MUST
 reject unknown permission identifiers, own paths outside `$HOME`, own paths
 that equal or contain a protected path (§6.3), and own paths that are too broad
 (`~`, `~/.config`, `~/.local`, `~/.local/share`, `~/.cache`).
@@ -382,13 +446,26 @@ Guarded, unknown config locations may break the app (§14 O7).
 
 ### 11.1 Native mode
 
-The host provides glibc, the dynamic loader and the graphics stack:
-`libGL*`, `libEGL*`, `libGLX*`, `libGLdispatch*`, `libOpenGL*`, `libvulkan*`,
-`libgbm*`, `libdrm*`, Mesa and NVIDIA driver files, and `libLLVM*`. It also
-provides the base libraries on the AppImage project's exclude list (libc, libm,
-libpthread, libdl, librt, the dynamic loader, …). `ulai validate` MUST reject
-images that bundle any of these. Start from the AppImage exclude list and adjust
-with test results.
+The host provides glibc, the dynamic loader and the graphics stack. ULAI keeps
+its own minimal list. It deliberately does not reuse AppImage's
+`excludelist`: that file's licence is unclear (MIT in one place,
+GPL-2.0-only in another), and its policy of always using the host copy breaks
+apps when the host copy is older (pkg2appimage issue #538).
+
+`ulai validate` checks every bundled ELF file by name (`DT_SONAME`, or the
+file name):
+
+- **Error** (MUST come from the host in native mode):
+  - glibc and the loader: `libc`, `libm`, `libdl`, `libpthread`, `librt`,
+    `libresolv`, `libutil`, `libanl`, `ld-linux*`;
+  - the GPU and driver stack: `libGL*`, `libEGL*`, `libGLX*`,
+    `libGLdispatch*`, `libOpenGL*`, `libvulkan*`, `libgbm*`, `libdrm*`, and
+    Mesa and NVIDIA driver files.
+- **Warning** (report, and point to §11.2): `libstdc++`, `libgcc_s`,
+  `libLLVM*`, `fontconfig`. Also report the highest `GLIBCXX` and `CXXABI`
+  version required by any bundled ELF, and whether `libstdc++` is bundled;
+  §11.2 needs that data.
+- Everything else is bundled, with no message.
 
 ### 11.2 Library conflicts
 
@@ -462,3 +539,24 @@ first install from a compromised publisher (TOFU only protects updates).
 
 The manifest's `ulai` field carries the spec version. Minor versions stay
 backward compatible; handlers ignore unknown fields.
+
+## 16. Command-line output and exit codes
+
+Every `--json` output carries `"schema"` (an integer, bumped on breaking
+changes) and `"status"` (a string). The `ulai doctor` schema is in
+`docs/doctor-schema.md`.
+
+`ulai verify` exit codes are **stable API**:
+
+| Exit | `status` | Meaning |
+|---|---|---|
+| 0 | `valid` | The signature verifies with the key embedded in the file (§3.2) |
+| 3 | `unsigned` | No signature (empty or missing `.sha256_sig`) |
+| 4 | `invalid` | The signature or digest does not match, or the key is revoked |
+| 5 | `corrupt` or `unsupported` | The ELF or sections are malformed, or the algorithm, key or filesystem is not supported |
+| 1 | — | Internal error |
+| 2 | — | Usage error |
+
+`ulai inspect` and `ulai validate` use exit 5 for a file whose filesystem they
+cannot read. In M1 this includes DwarFS images; verify still works on them.
+
