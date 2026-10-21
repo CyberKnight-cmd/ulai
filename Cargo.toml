@@ -6,7 +6,8 @@ members = ["crates/ulai-core", "crates/ulai-cli", "crates/ulai-run"]
 version = "0.1.0"
 edition = "2024"
 publish = false
-# No `license` field yet: ADR-012 is open.
+license = "GPL-3.0-or-later"
+repository = "https://github.com/CyberKnight-cmd/ulai"
 
 [workspace.dependencies]
 ulai-core = { path = "crates/ulai-core" }

@@ -44,4 +44,6 @@ install, uninstall and signed updates.
 
 ## License
 
-To be decided by the project owner (see ADR-012 in docs/DECISIONS.md).
+GPL-3.0-or-later; see [LICENSE](LICENSE) and ADR-012 in
+[docs/DECISIONS.md](docs/DECISIONS.md). Apps packaged as ULAI files keep their
+own licences.

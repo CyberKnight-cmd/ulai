@@ -54,9 +54,11 @@ Candidate crates (confirm each is maintained and licence-compatible before
 adding): `landlock` (official Rust bindings), `goblin` or `object` (ELF),
 `backhand` (SquashFS), `pgp` (rPGP, OpenPGP verification), `sha2`, `blake3`,
 `serde` + `serde_json`, `clap`, `thiserror`, `anyhow`, `tracing`, `gtk4`,
-`libadwaita`. If `landlock` lacks a newer ABI right that SPEC needs (for example
-pathname UNIX-socket control), implement it in one small documented module and
-propose it upstream.
+`libadwaita`. ULAI is GPL-3.0-or-later (ADR-012), so every new dependency
+must be GPL-3.0-compatible: permissive, or GPL-3.0/LGPL-3.0, never
+GPL-2.0-only or proprietary. If `landlock` lacks a newer ABI right that SPEC
+needs (for example pathname UNIX-socket control), implement it in one small
+documented module and propose it upstream.
 
 ## Engineering conventions
 

@@ -56,8 +56,14 @@ native-messaging manifests are declared in the manifest and written by the
 handler at install time, with consent. The running app never needs write
 access to those locations. *Accepted.*
 
-**ADR-012 — License.** Owner to decide. Recommendation: `MIT OR Apache-2.0`
-(Rust ecosystem norm, simple for distro packaging). *Open.*
+**ADR-012 — License: GPL-3.0-or-later.** Chosen by the project owner
+(2026-10-21) over the earlier recommendation, `MIT OR Apache-2.0`. ULAI is a
+security tool that users must be able to audit, and copyleft keeps modified
+versions open. The full text is in `LICENSE`. Every dependency must be
+GPL-3.0-compatible: permissive licences (MIT, Apache-2.0, BSD, ISC, Zlib,
+Unicode) are fine, while GPL-2.0-only and proprietary licences are not. At
+adoption, all 51 locked dependencies were permissive. Apps that ULAI runs are
+separate programs and are not affected by ULAI's licence. *Accepted.*
 
 **ADR-013 — Isolation on kernels without Landlock ABI ≥ 9.** Below ABI 9,
 Landlock cannot stop connections to pathname UNIX sockets, so a malicious app
