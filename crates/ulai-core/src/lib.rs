@@ -4,3 +4,10 @@
 //! the raw syscalls nothing safe in the dependency set covers.
 
 #![deny(unsafe_code)]
+
+pub mod host;
+mod sys;
+
+pub mod doctor;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
