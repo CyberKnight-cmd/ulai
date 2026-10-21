@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `ulai-run`: the ULAI launcher (SPEC §10).
 //!
 //! Not implemented before milestone M2. Until then it refuses to launch

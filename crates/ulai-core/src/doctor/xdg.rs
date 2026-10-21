@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 11: XDG base directories (with the spec defaults) and
 //! `XDG_RUNTIME_DIR`. Relative values are ignored, as the Base Directory
 //! specification requires.

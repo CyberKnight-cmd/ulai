@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 6: FUSE. `/dev/fuse`, the `fusermount` helpers (and whether they are
 //! setuid root, which `no_new_privs` disables), and `libfuse.so.2`.
 //! Informational: ULAI itself never uses FUSE (ADR-006).

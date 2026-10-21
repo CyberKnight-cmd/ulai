@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 4: unprivileged user namespaces (input for ADR-013 and SPEC O2).
 //!
 //! Reads the relevant sysctls, then runs a live probe in a fresh child

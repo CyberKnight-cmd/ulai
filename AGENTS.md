@@ -72,6 +72,11 @@ documented module and propose it upstream.
   (ROADMAP M2) is a regression gate for any change to `ulai-run` or the policy
   model.
 - Small commits, Conventional Commits style (`feat(run): …`, `fix(core): …`).
+<!-- REUSE-IgnoreStart -->
+- Every new file starts with `SPDX-FileCopyrightText: 2026 The ULAI contributors`
+  and `SPDX-License-Identifier: GPL-3.0-or-later` (as a comment), or gets an
+  entry in `REUSE.toml` if it cannot carry comments. CI runs `reuse lint`.
+<!-- REUSE-IgnoreEnd -->
 
 ## Workflow
 

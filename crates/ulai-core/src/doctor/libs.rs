@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Host shared-library lookup: `ldconfig -p`, falling back to scanning the
 //! standard library directories. Never loads or executes the libraries.
 

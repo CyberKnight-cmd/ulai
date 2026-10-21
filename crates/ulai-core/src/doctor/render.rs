@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Human-readable `ulai doctor` output.
 //!
 //! Marks are verdicts from ULAI's point of view: `✓` favourable, `✗`

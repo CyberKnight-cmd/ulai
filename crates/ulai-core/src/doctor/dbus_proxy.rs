@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 10: `xdg-dbus-proxy` (SPEC §7) path and version.
 
 use std::path::PathBuf;

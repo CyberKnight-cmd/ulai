@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `ulai doctor`: report what this system can enforce.
 //!
 //! Every probe reads the system only through [`Host`]. A probe never fails the

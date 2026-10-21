@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A fake [`Host`] for tests: the filesystem is a tempdir, and env, commands
 //! and syscalls are canned. No test using it touches the real system.
 //!

@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Licensing for files that cannot carry a comment header (JSON, golden
+# snapshots that must stay byte-exact, generated lock files) and for the
+# documentation. See ADR-012.
+version = 1
+
+[[annotations]]
+path = [
+  "*.md",
+  "docs/**",
+  "Cargo.lock",
+  "crates/ulai-core/tests/snapshots/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The ULAI contributors"
+SPDX-License-Identifier = "GPL-3.0-or-later"

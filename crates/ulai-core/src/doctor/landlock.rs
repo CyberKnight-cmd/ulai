@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 3: Landlock ABI, protection label (SPEC §6.2) and enforceable
 //! features.
 //!

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 [package]
 name = "ulai-core"
 description = "ULAI core library: probes, manifest, parsing, policy model"

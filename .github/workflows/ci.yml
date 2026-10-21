@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # fmt, clippy, tests and the static musl build. The toolchain (stable, plus
 # the musl target) comes from rust-toolchain.toml. No GTK: ulai-handler
 # arrives in M4.
@@ -15,6 +19,13 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  reuse:
+    # Every file must carry SPDX copyright and licence information (ADR-012).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: fsfe/reuse-action@v6
+
   check:
     runs-on: ubuntu-latest
     steps:

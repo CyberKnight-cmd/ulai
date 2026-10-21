@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The [`Host`] trait: everything doctor needs from the running system.
 //!
 //! Probes see the system only through this trait, so unit tests can run them

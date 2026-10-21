@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Raw system calls. This is the only module in the workspace allowed to use
 //! `unsafe`; every block carries a `// SAFETY:` comment.
 //!

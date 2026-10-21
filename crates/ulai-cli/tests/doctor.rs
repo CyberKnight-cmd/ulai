@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Runs the real `ulai` binary on the real host. These tests assert only the
 //! shape of the output (exit code, JSON contract), never this machine's
 //! values, so they pass on any system.

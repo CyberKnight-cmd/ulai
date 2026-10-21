@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 7: the host's C library. glibc via `getconf GNU_LIBC_VERSION`;
 //! musl via `/lib/ld-musl-*.so.1`. Never inferred from our own libc (the
 //! `ulai` binary is static musl).

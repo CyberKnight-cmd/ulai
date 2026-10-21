@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 2: active LSMs, from `/sys/kernel/security/lsm`.
 
 use std::path::Path;

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Probe 5: Yama ptrace scope, from `/proc/sys/kernel/yama/ptrace_scope`.
 
 use std::path::Path;

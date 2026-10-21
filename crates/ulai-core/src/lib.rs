@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! ULAI core library.
 //!
 //! `unsafe` is denied crate-wide; the single exception is [`sys`], which wraps

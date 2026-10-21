@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Run `ulai doctor` inside a disposable QEMU/KVM VM booted from an official
 # distribution cloud image, as an unprivileged user, and save the output.
 #
