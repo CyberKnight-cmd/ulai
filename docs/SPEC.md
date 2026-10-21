@@ -104,6 +104,17 @@ upstream type 2 runtime for both ELF32 and ELF64.
 `.upd_info` MAY carry update information in the existing AppImage formats (for
 example zsync URLs). Downloaded updates MUST pass §3.2 with the pinned key.
 
+### 3.4 Runtime modes
+
+The manifest's `runtime_mode` declares one of:
+
+- **`native`** — the app uses the host's glibc and dynamic loader. No bundled ELF
+  file may require a glibc symbol version newer than `glibc_floor`. The graphics
+  stack and the libraries on the exclude list (§11.1) come from the host.
+- **`portable`** — the app bundles its own dynamic loader and libc
+  (sharun-style) and needs nothing from the host except the kernel. GPU comes
+  from the shared driver pack (§11.3). This mode arrives in a later milestone.
+
 ### 3.5 Reading untrusted files
 
 Applies to every file being inspected, validated, verified or installed.
@@ -125,17 +136,6 @@ Applies to every file being inspected, validated, verified or installed.
   controls U+061C, U+200E, U+200F, U+202A–U+202E and U+2066–U+2069, so that a
   hostile file cannot fake verdict lines or spoof a fingerprint. JSON output
   stays raw, since JSON escaping already handles it.
-
-### 3.4 Runtime modes
-
-The manifest's `runtime_mode` declares one of:
-
-- **`native`** — the app uses the host's glibc and dynamic loader. No bundled ELF
-  file may require a glibc symbol version newer than `glibc_floor`. The graphics
-  stack and the libraries on the exclude list (§11.1) come from the host.
-- **`portable`** — the app bundles its own dynamic loader and libc
-  (sharun-style) and needs nothing from the host except the kernel. GPU comes
-  from the shared driver pack (§11.3). This mode arrives in a later milestone.
 
 ## 4. Manifest (`/.ulai/manifest.json`)
 
