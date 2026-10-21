@@ -68,10 +68,32 @@ separate programs and are not affected by ULAI's licence. *Accepted.*
 **ADR-013 — Isolation on kernels without Landlock ABI ≥ 9.** Below ABI 9,
 Landlock cannot stop connections to pathname UNIX sockets, so a malicious app
 can reach the real session bus (for example, asking `systemd --user` to start an
-unsandboxed process) or the X11 socket. Options: (a) label it "weak isolation"
-and continue; (b) use a minimal mount namespace via unprivileged user namespaces
-where allowed, to hide the real sockets; (c) refuse Guarded. Decide after the
-M2 measurements. *Open.*
+unsandboxed process) or the X11 socket.
+
+**This is on the critical path.** ABI 9 needs Linux 7.1, and every
+mainstream distribution measured on 2026-10-21 is below it: Ubuntu 24.04 HWE
+and 26.04 (7.0, ABI 8), Fedora 44 (6.19, ABI 7) and Debian 13 (6.12, ABI 6).
+Only the Arch dev host (7.2) is Strong. See the evidence table in RESEARCH.md.
+
+Options:
+
+- (a) Label it "weak isolation" and continue.
+- (b) Use a minimal mount namespace via unprivileged user namespaces, where
+  allowed, to hide the real sockets. On Ubuntu 24.04 and 26.04, AppArmor's
+  `unprivileged_userns` profile lets `unshare` succeed but then denies
+  `CAP_SYS_ADMIN`, so this needs an AppArmor profile (also SPEC §14 O2).
+- (c) Refuse Guarded.
+- (d) Mediate `connect()` and `sendmsg()` on pathname and abstract UNIX
+  sockets with seccomp user notification. The supervisor (outside the
+  sandbox) checks the address, performs the connect itself and injects the
+  resulting fd into the app with `SECCOMP_IOCTL_NOTIF_ADDFD`. This avoids a
+  time-of-check/time-of-use race on the socket address. Works without user
+  namespaces. Prior art: nolabs-ai/nono (Apache-2.0), which uses
+  `SECCOMP_IOCTL_NOTIF_ADDFD` in its Linux sandbox and supervisor; its design
+  has not been reviewed in detail yet. Not implemented.
+
+The M2 plan must choose among these options, using M2's measurements.
+*Open.*
 
 **ADR-014 — The CLI and launcher ship as static musl binaries; they depend
 only on the kernel.** `ulai` and `ulai-run` are built for
