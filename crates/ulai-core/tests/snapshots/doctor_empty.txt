@@ -1,0 +1,53 @@
+ULAI doctor 0.1.0 (report schema 1)
+
+Kernel
+  ? unknown: uname failed: ENOSYS
+
+Linux security modules
+  ? active: unknown (/sys/kernel/security/lsm not found (securityfs not mounted?))
+
+Landlock
+  ✗ not built into this kernel (ENOSYS) → protection label: None
+
+User namespaces
+  ? probe: unknown (probe child failed: not configured)
+
+Yama
+  ✗ not active (no ptrace_scope sysctl)
+
+FUSE
+  ✗ /dev/fuse
+  ✗ fusermount3: not found
+  ✗ fusermount: not found
+  ✗ libfuse.so.2: not found
+
+Host C library
+  ? unknown: getconf not found, and no musl loader in /lib
+
+Session
+  ✗ XDG_SESSION_TYPE unset
+  ✗ WAYLAND_DISPLAY unset
+  ✗ DISPLAY unset
+  ✗ XDG_CURRENT_DESKTOP unset
+
+GPU
+  ✗ no DRM cards
+  ✗ render nodes: none
+  ✗ Vulkan ICDs: none
+  ✗ EGL vendors: none
+  ✗ libvulkan.so.1: not found (via directory scan)
+  ✗ libEGL.so.1: not found (via directory scan)
+  ✗ libGL.so.1: not found (via directory scan)
+
+xdg-dbus-proxy
+  ✗ not installed (needed for Strict and Guarded, SPEC §7)
+
+XDG directories
+  ✓ XDG_DATA_DIRS=/usr/local/share:/usr/share
+  ✓ XDG_CONFIG_DIRS=/etc/xdg
+  ✗ XDG_RUNTIME_DIR unset (needed for the D-Bus proxy socket)
+  ? home: unknown (HOME unset or not absolute)
+  ? config_home: unknown (XDG_CONFIG_HOME unset and HOME unknown)
+  ? data_home: unknown (XDG_DATA_HOME unset and HOME unknown)
+  ? state_home: unknown (XDG_STATE_HOME unset and HOME unknown)
+  ? cache_home: unknown (XDG_CACHE_HOME unset and HOME unknown)

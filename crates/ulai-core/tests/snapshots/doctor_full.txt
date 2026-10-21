@@ -1,0 +1,69 @@
+ULAI doctor 0.1.0 (report schema 1)
+
+Kernel
+  ✓ 7.2.9-arch1-1 (x86_64)
+
+Linux security modules
+  ✓ active: capability,landlock,lockdown,yama,bpf
+  ✓ landlock in the active list
+
+Landlock
+  ✓ ABI 10 → protection label: Strong
+  ✓ TCP deny (ABI ≥ 4)
+  ✓ IOCTL_DEV (ABI ≥ 5)
+  ✓ IPC scoping (ABI ≥ 6)
+  ✓ audit (ABI ≥ 7)
+  ✓ pathname sockets (ABI ≥ 9)
+  ✓ UDP (ABI ≥ 10)
+
+User namespaces
+  ✓ max_user_namespaces = 94304
+  ✓ unprivileged_userns_clone = 1
+  ✗ live probe failed at: mount tmpfs (EPERM)
+
+Yama
+  ✓ ptrace_scope = 1 (restricted: only descendants can be traced)
+
+FUSE
+  ✓ /dev/fuse
+  ✓ fusermount3: /usr/bin/fusermount3 (setuid root; unusable under no_new_privs)
+  ✗ fusermount: not found
+  ✗ libfuse.so.2: not found
+
+Host C library
+  ✓ glibc 2.44
+
+Session
+  ✓ XDG_SESSION_TYPE=wayland
+  ✓ WAYLAND_DISPLAY=wayland-0 (socket present)
+  ✓ DISPLAY=:0
+  ✓ XDG_CURRENT_DESKTOP=KDE
+
+GPU
+  ✓ card0: Intel (0x8086:0xa7a0), driver i915 → Mesa
+  ✓ card1: NVIDIA (0x10de:0x28e0), driver nvidia → NVIDIA proprietary userspace
+  ✓ NVIDIA driver 615.78.08 (open kernel module)
+  ✓ render nodes: /dev/dri/renderD128, /dev/dri/renderD129
+  ✓ Vulkan ICDs:
+      /usr/share/vulkan/icd.d/intel_icd.x86_64.json → /usr/lib/libvulkan_intel.so
+      /usr/share/vulkan/icd.d/nvidia_icd.json → libGLX_nvidia.so.0
+  ✓ EGL vendors:
+      /usr/share/glvnd/egl_vendor.d/10_nvidia.json → libEGL_nvidia.so.0
+      /usr/share/glvnd/egl_vendor.d/50_mesa.json → libEGL_mesa.so.0
+  ✓ libvulkan.so.1: /usr/lib/libvulkan.so.1 (via ldconfig)
+  ✓ libEGL.so.1: /usr/lib/libEGL.so.1 (via ldconfig)
+  ✗ libGL.so.1: not found (via ldconfig)
+
+xdg-dbus-proxy
+  ✓ /usr/bin/xdg-dbus-proxy (version 0.1.9)
+
+XDG directories
+  ✓ HOME=/home/user
+  ✓ XDG_CONFIG_HOME=/home/user/.config (default)
+  ✓ XDG_DATA_HOME=/home/user/.local/share (default)
+  ✓ XDG_STATE_HOME=/home/user/.local/state (default)
+  ✓ XDG_CACHE_HOME=/home/user/.cache (default)
+  ✓ XDG_DATA_DIRS=/usr/local/share:/usr/share
+  ✓ XDG_CONFIG_DIRS=/etc/xdg
+  ✓ XDG_RUNTIME_DIR=/run/user/1000 (owner ok, mode 0700)
+  ✓ ULAI store: /home/user/.local/share/ulai

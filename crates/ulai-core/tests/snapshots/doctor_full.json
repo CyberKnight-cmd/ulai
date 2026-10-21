@@ -1,0 +1,223 @@
+{
+  "schema": 1,
+  "ulai_version": "0.1.0",
+  "kernel": {
+    "status": "ok",
+    "errors": [],
+    "release": "7.2.9-arch1-1",
+    "arch": "x86_64"
+  },
+  "lsm": {
+    "status": "ok",
+    "errors": [],
+    "active": [
+      "capability",
+      "landlock",
+      "lockdown",
+      "yama",
+      "bpf"
+    ],
+    "landlock_listed": true
+  },
+  "landlock": {
+    "status": "ok",
+    "errors": [],
+    "state": "available",
+    "abi": 10,
+    "errno": null,
+    "label": "strong",
+    "abi_newer_than_known": false,
+    "features": {
+      "tcp_deny": true,
+      "ioctl_dev": true,
+      "ipc_scoping": true,
+      "audit": true,
+      "pathname_sockets": true,
+      "udp": true
+    },
+    "notes": []
+  },
+  "userns": {
+    "status": "ok",
+    "errors": [],
+    "sysctls": {
+      "max_user_namespaces": 94304,
+      "unprivileged_userns_clone": 1
+    },
+    "probe": {
+      "result": "failed",
+      "failed_step": "mount_tmpfs",
+      "steps": [
+        {
+          "step": "unshare",
+          "ok": true,
+          "errno": null
+        },
+        {
+          "step": "setgroups",
+          "ok": true,
+          "errno": null
+        },
+        {
+          "step": "uid_map",
+          "ok": true,
+          "errno": null
+        },
+        {
+          "step": "gid_map",
+          "ok": true,
+          "errno": null
+        },
+        {
+          "step": "mount_private",
+          "ok": true,
+          "errno": null
+        },
+        {
+          "step": "mount_tmpfs",
+          "ok": false,
+          "errno": "EPERM"
+        }
+      ]
+    },
+    "running_as_root": false
+  },
+  "yama": {
+    "status": "ok",
+    "errors": [],
+    "active": true,
+    "ptrace_scope": 1,
+    "meaning": "restricted: only descendants can be traced"
+  },
+  "fuse": {
+    "status": "ok",
+    "errors": [],
+    "dev_fuse": true,
+    "fusermount3": {
+      "path": "/usr/bin/fusermount3",
+      "setuid_root": true
+    },
+    "fusermount": null,
+    "libfuse2": {
+      "found": false,
+      "path": null
+    }
+  },
+  "libc": {
+    "status": "ok",
+    "errors": [],
+    "glibc": "2.44",
+    "musl_loader": null
+  },
+  "session": {
+    "status": "ok",
+    "errors": [],
+    "type": "wayland",
+    "wayland_display": "wayland-0",
+    "wayland_socket_exists": true,
+    "display": ":0",
+    "current_desktop": "KDE"
+  },
+  "gpu": {
+    "status": "ok",
+    "errors": [],
+    "cards": [
+      {
+        "name": "card0",
+        "pci_vendor": "0x8086",
+        "vendor": "intel",
+        "pci_device": "0xa7a0",
+        "driver": "i915",
+        "stack": "mesa"
+      },
+      {
+        "name": "card1",
+        "pci_vendor": "0x10de",
+        "vendor": "nvidia",
+        "pci_device": "0x28e0",
+        "driver": "nvidia",
+        "stack": "nvidia"
+      }
+    ],
+    "nvidia": {
+      "version": "615.78.08",
+      "kernel_module": "open"
+    },
+    "render_nodes": [
+      "/dev/dri/renderD128",
+      "/dev/dri/renderD129"
+    ],
+    "vulkan_icds": [
+      {
+        "path": "/usr/share/vulkan/icd.d/intel_icd.x86_64.json",
+        "library_path": "/usr/lib/libvulkan_intel.so",
+        "error": null
+      },
+      {
+        "path": "/usr/share/vulkan/icd.d/nvidia_icd.json",
+        "library_path": "libGLX_nvidia.so.0",
+        "error": null
+      }
+    ],
+    "egl_vendors": [
+      {
+        "path": "/usr/share/glvnd/egl_vendor.d/10_nvidia.json",
+        "library_path": "libEGL_nvidia.so.0",
+        "error": null
+      },
+      {
+        "path": "/usr/share/glvnd/egl_vendor.d/50_mesa.json",
+        "library_path": "libEGL_mesa.so.0",
+        "error": null
+      }
+    ],
+    "loaders": {
+      "source": "ldconfig",
+      "libvulkan.so.1": "/usr/lib/libvulkan.so.1",
+      "libEGL.so.1": "/usr/lib/libEGL.so.1",
+      "libGL.so.1": null
+    }
+  },
+  "dbus_proxy": {
+    "status": "ok",
+    "errors": [],
+    "path": "/usr/bin/xdg-dbus-proxy",
+    "version": "0.1.9"
+  },
+  "xdg": {
+    "status": "ok",
+    "errors": [],
+    "home": "/home/user",
+    "config_home": {
+      "path": "/home/user/.config",
+      "source": "default"
+    },
+    "data_home": {
+      "path": "/home/user/.local/share",
+      "source": "default"
+    },
+    "state_home": {
+      "path": "/home/user/.local/state",
+      "source": "default"
+    },
+    "cache_home": {
+      "path": "/home/user/.cache",
+      "source": "default"
+    },
+    "data_dirs": [
+      "/usr/local/share",
+      "/usr/share"
+    ],
+    "config_dirs": [
+      "/etc/xdg"
+    ],
+    "runtime_dir": {
+      "path": "/run/user/1000",
+      "exists": true,
+      "owner_ok": true,
+      "mode": "0700",
+      "mode_ok": true
+    },
+    "ulai_store": "/home/user/.local/share/ulai"
+  }
+}
