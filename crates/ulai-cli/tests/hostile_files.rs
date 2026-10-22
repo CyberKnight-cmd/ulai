@@ -235,7 +235,7 @@ fn inconsistent_block_size_fails_safely() {
         )
         .unwrap();
         w.push_file(
-            Cursor::new(vec![b'\x7f', b'E', b'L', b'F', 0, 0, 0, 0].repeat(4096)),
+            Cursor::new([b'\x7f', b'E', b'L', b'F', 0, 0, 0, 0].repeat(4096)),
             "tool",
             h(0o755),
         )
