@@ -15,7 +15,10 @@ for f in "$fx"/appimage/*.AppImage; do
 	off=$(python3 - "$f" <<'PY'
 import struct, sys
 d = open(sys.argv[1], "rb").read(4096)
-shoff, = struct.unpack_from("<Q", d, 0x28); se, sn = struct.unpack_from("<HH", d, 0x3A)
+if d[4] == 2:  # ELF64
+    shoff, = struct.unpack_from("<Q", d, 0x28); se, sn = struct.unpack_from("<HH", d, 0x3A)
+else:  # ELF32
+    shoff, = struct.unpack_from("<I", d, 0x20); se, sn = struct.unpack_from("<HH", d, 0x2E)
 print(shoff + se * sn)
 PY
 )
