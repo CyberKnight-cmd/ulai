@@ -1,0 +1,5 @@
++ sq key generate --own-key --without-password --profile rfc9580 --name ULAI fixture v6 --email v6@fixtures.ulai.invalid --rev-cert rev.pgp
++ sq cert export --cert-email v6@fixtures.ulai.invalid --output /tmp/out/sq-v6.key.asc
++ sq sign --signer-email v6@fixtures.ulai.invalid --signature-file /tmp/out/sq-v6.sig.asc msg
++ sq inspect /tmp/out/sq-v6.sig.asc
++ sq inspect /tmp/out/sq-v6.key.asc

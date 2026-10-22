@@ -15,6 +15,7 @@ apps are never committed; they are fetched by hand into `~/.cache`.
 | `upstream-rsa3072.AppImage` | upstream `appimagetool --sign` | embedded, RSA-3072, text (0x01), SHA-512 |
 | `upstream-ed25519.AppImage` | upstream `appimagetool --sign` | embedded, Ed25519 (legacy EdDSA), text, SHA-512 |
 | `goappimage-rsa3072.AppImage` | go-appimage `appimagetool` | embedded, RSA-3072, binary (0x00), SHA-256 |
+| `elf32-rsa3072.AppImage` | upstream `appimagetool --sign` with `--runtime-file runtime-i686` (`ARCH=i686`) | embedded, RSA-3072 (`elf32.pub.asc`), text, SHA-512; an **ELF32** runtime |
 | `legacy-unsigned.AppImage` + `.sig` | upstream `appimagetool`, then `gpg --detach-sign` | detached (ADR-016), RSA-3072, binary, SHA-512 |
 
 The first three contain `/.ulai/manifest.json` (ULAI files). The legacy
@@ -75,6 +76,19 @@ SHA-256 of each fixture (`SHA256SUMS`):
 4c10eb82475b1f618170b34dea8be14f193e1ae3671addb22c9dfda1deb73700  ./upstream-ed25519.AppImage
 4a6d218d54235ba8a0bff74f6c12e8a2f8ba4a4e0eeae1e651be310dee8a4577  ./upstream-rsa3072.AppImage
 ```
+
+### The ELF32 fixture
+
+Built in a second run of the same kind of VM (Ubuntu 26.04, 2026-10-22) with
+upstream `appimagetool` (continuous build 313) and
+`https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-i686`:
+
+```
+ARCH=i686 ./appimagetool --runtime-file runtime-i686 --sign --sign-key <elf32 fingerprint> D elf32-rsa3072.AppImage
+```
+
+Its AppDir holds only `AppRun` (a shell script), a desktop entry and a PNG,
+written for ULAI (CC0-1.0); it has no manifest.
 
 ## Licences
 

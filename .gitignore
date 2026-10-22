@@ -3,3 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 /target
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/fuzz/coverage
+/fuzz/logs

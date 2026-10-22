@@ -42,8 +42,28 @@ leave a temporary GnuPG home that `make.sh` deletes on exit.
 | `two-keys` | corrupt | exactly one primary key |
 | `wrong-key` | invalid | not in the supplied key |
 
-Not covered yet: v5 (LibrePGP) keys, because GnuPG 2.4.9 no longer makes them,
-and v6 / RFC 9580 keys. Both need another independent source.
+## Independent v6 material
+
+- `rfc9580/`: the test vectors of RFC 9580, Appendix A, copied verbatim (the
+  armored blocks; `a6-cleartext.txt` is the A.6 cleartext after
+  dash-unescaping, `a2-msg.txt` is the A.2 input "OpenPGP").
+  - A.3 + A.6: v6 Ed25519 certificate and text signature. Valid; the
+    fingerprint matches the one printed in the RFC.
+  - A.1 + A.2: a bare v4 Ed25519Legacy key packet without a self-signature.
+    ULAI rejects it ("the key has no self-signature").
+  - Licence: the RFC's boilerplate places Code Components under the Revised
+    BSD licence (IETF Trust Legal Provisions §4.e), so these are annotated
+    BSD-3-Clause. Whether test vectors count as Code Components is not stated
+    explicitly in the RFC.
+- `sequoia/`: a v6 key and detached signature over `msg` made by Sequoia
+  (`sq 1.3.1`, sequoia-openpgp 2.1.0) in a disposable Ubuntu 26.04 VM on
+  2026-10-22; commands in `sequoia/commands.txt`. A certification-only
+  primary key with an Ed25519 signing subkey, so it also exercises v6
+  back-signatures.
+- v5 (LibrePGP): GnuPG 2.4.9 no longer makes v5 keys and Sequoia never did, so
+  the v5 test patches the version byte of GnuPG-made packets. ULAI decides
+  "unsupported" before any cryptography, so this tests the policy, not v5
+  parsing.
 
 ## SHA-256 of each file
 

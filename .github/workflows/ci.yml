@@ -85,3 +85,25 @@ jobs:
             target/x86_64-unknown-linux-musl/release/ulai
             target/x86_64-unknown-linux-musl/release/ulai-run
             doctor.json
+
+  fuzz-smoke:
+    # 60 s per target on every push; long campaigns run outside CI
+    # (RESEARCH.md experiment log).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install nightly and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Seed corpora from the fixtures
+        run: fuzz/seed.sh
+      - name: Fuzz each target for 60 s
+        working-directory: fuzz
+        run: |
+          for t in container image manifest signature elf desktop; do
+            cargo +nightly fuzz run -O "$t" -- -max_total_time=60 -timeout=10
+          done

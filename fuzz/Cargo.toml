@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Fuzz targets for every parser of untrusted input (ROADMAP M1).
+# Needs nightly: cargo +nightly fuzz run <target>. Not part of the
+# workspace, so stable builds and the no-C guard never see it.
+[package]
+name = "ulai-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ulai-core = { path = "../crates/ulai-core", features = ["test-support"] }
+
+[workspace]
+
+[[bin]]
+name = "container"
+path = "fuzz_targets/container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image"
+path = "fuzz_targets/image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manifest"
+path = "fuzz_targets/manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "signature"
+path = "fuzz_targets/signature.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "elf"
+path = "fuzz_targets/elf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "desktop"
+path = "fuzz_targets/desktop.rs"
+test = false
+doc = false
+bench = false

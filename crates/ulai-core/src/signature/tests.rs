@@ -192,3 +192,124 @@ fn binary_key_and_signature_are_accepted() {
             .unwrap_or_else(|e| panic!("{k} + {s}: {e}"));
     }
 }
+
+/// Version byte of the first packet of a binary key or signature.
+fn header_len(b: &[u8]) -> usize {
+    if b[0] & 0x40 != 0 {
+        if b[1] < 192 {
+            2
+        } else if b[1] < 224 {
+            3
+        } else {
+            6
+        }
+    } else {
+        [2, 3, 5][(b[0] & 3) as usize]
+    }
+}
+
+#[test]
+fn v5_keys_and_signatures_are_unsupported() {
+    // No independent source of LibrePGP v5 material exists in our toolchain
+    // (GnuPG 2.4.9 makes v4); patch the version byte of GnuPG-made packets.
+    // The policy decision happens before any cryptography.
+    let msg = read("msg");
+    let mut k = read("rsa3072-binary-sha256.key.gpg");
+    let i = header_len(&k);
+    assert_eq!(k[i], 4);
+    k[i] = 5;
+    let r = verify_detached(
+        &k,
+        &read("rsa3072-binary-sha256.sig.asc"),
+        msg.as_slice(),
+        now(),
+    );
+    assert!(
+        matches!(&r, Err(Rejection::Unsupported(m)) if m.contains("v5")),
+        "{r:?}"
+    );
+    let mut s = read("rsa3072-binary-sha256.sig.gpg");
+    let i = header_len(&s);
+    assert_eq!(s[i], 4);
+    s[i] = 5;
+    let r = verify_detached(
+        &read("rsa3072-binary-sha256.key.asc"),
+        &s,
+        msg.as_slice(),
+        now(),
+    );
+    assert!(
+        matches!(&r, Err(Rejection::Unsupported(m)) if m.contains("V5")),
+        "{r:?}"
+    );
+}
+
+fn rfc(name: &str) -> Vec<u8> {
+    read(&format!("rfc9580/{name}"))
+}
+
+/// RFC 9580 Appendix A.3 (v6 certificate) and A.6 (v6 cleartext-signed
+/// message): an independent v6 vector. The signed text is the dash-unescaped
+/// cleartext.
+#[test]
+fn rfc9580_v6_vector() {
+    let a = verify_detached(
+        &rfc("a3-v6-cert.key.asc"),
+        &rfc("a6-v6-cleartext.sig.asc"),
+        rfc("a6-cleartext.txt").as_slice(),
+        now(),
+    )
+    .unwrap();
+    assert_eq!(a.signer.key_version, 6);
+    assert_eq!(a.signer.algorithm, "Ed25519");
+    assert_eq!(a.signer.signature_type, "text");
+    // The fingerprint printed in RFC 9580, Appendix A.3.
+    assert_eq!(
+        a.signer.primary_fingerprint,
+        "CB186C4F0609A697E4D52DFA6C722B0C1F1E27C18A56708F6525EC27BAD9ACC9"
+    );
+    let mut tampered = rfc("a6-cleartext.txt");
+    tampered[0] ^= 1;
+    assert!(
+        verify_detached(
+            &rfc("a3-v6-cert.key.asc"),
+            &rfc("a6-v6-cleartext.sig.asc"),
+            tampered.as_slice(),
+            now()
+        )
+        .is_err()
+    );
+}
+
+/// RFC 9580 Appendix A.1 is a bare v4 key packet without a self-signature:
+/// ULAI never trusts such a key, even though A.2 is a correct signature.
+#[test]
+fn rfc9580_bare_v4_key_is_invalid() {
+    let r = verify_detached(
+        &rfc("a1-v4-ed25519legacy.key.asc"),
+        &rfc("a2-v4-ed25519legacy.sig.asc"),
+        rfc("a2-msg.txt").as_slice(),
+        now(),
+    );
+    assert_eq!(
+        r,
+        Err(Rejection::Invalid("the key has no self-signature".into()))
+    );
+}
+
+/// A v6 key and signature made by Sequoia (sq 1.3.1): certification-only
+/// primary key, Ed25519 signing subkey with a v6 back-signature.
+#[test]
+fn sequoia_v6_subkey_signature() {
+    let a = verify_detached(
+        &read("sequoia/sq-v6.key.asc"),
+        &read("sequoia/sq-v6.sig.asc"),
+        read("sequoia/msg").as_slice(),
+        now(),
+    )
+    .unwrap();
+    assert_eq!((a.signer.key_version, a.signer.signed_by_subkey), (6, true));
+    assert_eq!(a.signer.primary_fingerprint.len(), 64);
+    assert_eq!(a.signer.signing_fingerprint.len(), 64);
+    assert_ne!(a.signer.primary_fingerprint, a.signer.signing_fingerprint);
+}

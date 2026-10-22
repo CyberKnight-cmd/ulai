@@ -12,6 +12,7 @@ path = [
   "*.md",
   "docs/**",
   "Cargo.lock",
+  "fuzz/Cargo.lock",
   "crates/ulai-core/tests/snapshots/**",
 ]
 precedence = "aggregate"
@@ -54,3 +55,12 @@ path = ["tests/fixtures/appimage/*.AppImage"]
 precedence = "override"
 SPDX-FileCopyrightText = ["2004-2025 Simon Peter, probonopd and the AppImage Team (runtime)", "2026 The ULAI contributors (content)"]
 SPDX-License-Identifier = "MIT AND LGPL-2.1-only AND BSD-2-Clause AND (BSD-3-Clause OR GPL-2.0-only) AND Zlib AND CC0-1.0"
+
+# RFC 9580 Appendix A test vectors, copied verbatim. RFC boilerplate:
+# Code Components are under the Revised BSD licence (TLP section 4.e).
+[[annotations]]
+path = ["tests/fixtures/openpgp/rfc9580/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2024 IETF Trust and the persons identified as the document authors"
+SPDX-License-Identifier = "BSD-3-Clause"
+

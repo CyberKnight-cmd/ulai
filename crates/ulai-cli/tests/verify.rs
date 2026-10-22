@@ -94,6 +94,22 @@ fn embedded_signatures_from_real_tools_are_valid() {
 }
 
 #[test]
+fn elf32_appimage_from_the_i686_runtime_is_valid() {
+    let (code, j) = verify(&fixtures().join("elf32-rsa3072.AppImage"), &[]);
+    assert_eq!((code, j["status"].as_str()), (0, Some("valid")), "{j}");
+    assert_eq!(j["signer"]["primary_fingerprint"], fingerprint("elf32"));
+    let out = ulai(&[
+        "inspect".as_ref(),
+        "--json".as_ref(),
+        fixtures().join("elf32-rsa3072.AppImage").as_os_str(),
+    ]);
+    let i: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(i["container"]["elf_class"], "elf32");
+    assert_eq!(i["container"]["machine"], "i386");
+    assert_eq!(i["container"]["fs"], "squashfs");
+}
+
+#[test]
 fn tampered_embedded_file_is_invalid() {
     // Flip one byte inside the SquashFS image (the last 1000 bytes).
     let (_d, p) = copy("upstream-rsa3072.AppImage", |b| {

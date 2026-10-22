@@ -10,6 +10,9 @@
 # usage: scripts/vm-run.sh <distro> <payload-dir> <out-dir>
 #   distro: debian-13 | fedora-44 | ubuntu-26.04
 #
+# Set ULAI_VM_PACKAGES (space-separated) to have cloud-init install
+# distribution packages at boot, before the payload runs.
+#
 # <payload-dir> is copied to /tmp/payload in the guest, and `run.sh` inside it
 # runs there as the guest user `ulai` (uid 1000, no sudo) with network access
 # through QEMU user networking. Whatever it writes to /tmp/out is copied to
@@ -99,6 +102,12 @@ users:
       - $(cat "$work/key.pub")
 ssh_pwauth: false
 EOF
+if [[ -n ${ULAI_VM_PACKAGES:-} ]]; then
+	{
+		echo "packages:"
+		for p in $ULAI_VM_PACKAGES; do echo "  - $p"; done
+	} >>"$work/user-data"
+fi
 printf 'instance-id: ulai-%s\nlocal-hostname: ulai-%s\n' "$distro" "$distro" >"$work/meta-data"
 cloud-localds "$work/seed.iso" "$work/user-data" "$work/meta-data"
 qemu-img create -q -f qcow2 -F qcow2 -b "$cache/$file" "$work/disk.qcow2" 12G
@@ -124,6 +133,7 @@ for _ in $(seq 120); do
 	sleep 5
 done
 guest true || { cp "$work/console.log" "$out/$distro.console.log"; echo "guest never came up" >&2; exit 1; }
+guest 'cloud-init status --wait >/dev/null 2>&1 || true' # finish package installs
 
 # --- run the payload as the unprivileged guest user -------------------------
 tar -C "$payload" -cf - . | guest 'rm -rf /tmp/payload /tmp/out && mkdir -p /tmp/payload /tmp/out && tar -C /tmp/payload -xf -'

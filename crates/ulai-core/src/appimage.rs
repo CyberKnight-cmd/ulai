@@ -188,9 +188,10 @@ impl Container {
         })
     }
 
-    /// `x86_64`, `aarch64`, or `e_machine N`.
+    /// `i386`, `x86_64`, `aarch64`, or `e_machine N`.
     pub fn machine_name(&self) -> String {
         match self.machine {
+            3 => "i386".into(),
             62 => "x86_64".into(),
             183 => "aarch64".into(),
             m => format!("e_machine {m}"),

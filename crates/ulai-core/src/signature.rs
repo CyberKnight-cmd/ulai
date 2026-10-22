@@ -261,11 +261,56 @@ fn parse_key(input: &[u8]) -> Result<SignedPublicKey, Rejection> {
     }
     match keys.len() {
         1 => Ok(keys.pop().expect("one key")),
+        // rPGP skips v5 (LibrePGP) key packets instead of reporting them.
+        0 if first_public_key_version(bytes) == Some(5) => Err(unsupported(
+            "the key is a v5 (LibrePGP) key; only v4 and v6 are supported",
+        )),
         0 => Err(corrupt("no public key found")),
         n => Err(corrupt(format!(
             "expected exactly one primary key, found {n}"
         ))),
     }
+}
+
+/// Version byte of the first packet if it is a public-key packet (tag 6).
+fn first_public_key_version(input: &[u8]) -> Option<u8> {
+    use std::io::Read as _;
+    let bin: Vec<u8> = if is_armor(input) {
+        let mut v = Vec::new();
+        pgp::armor::Dearmor::new(input)
+            .take(MAX_ARMOR_BYTES as u64)
+            .read_to_end(&mut v)
+            .ok()?;
+        v
+    } else {
+        input.to_vec()
+    };
+    let h = *bin.first()?;
+    if h & 0x80 == 0 {
+        return None;
+    }
+    let (tag, header_len) = if h & 0x40 != 0 {
+        let l0 = *bin.get(1)?;
+        let hl = match l0 {
+            0..=191 => 2,
+            192..=223 => 3,
+            255 => 6,
+            _ => return None, // partial lengths are not used for keys
+        };
+        (h & 0x3F, hl)
+    } else {
+        let hl = match h & 3 {
+            0 => 2,
+            1 => 3,
+            2 => 5,
+            _ => return None,
+        };
+        ((h >> 2) & 0x0F, hl)
+    };
+    if tag != 6 {
+        return None;
+    }
+    bin.get(header_len).copied()
 }
 
 /// Parses exactly one detached signature packet (armored or binary).
