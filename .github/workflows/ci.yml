@@ -56,6 +56,8 @@ jobs:
       - name: Install toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: No C code in the static binaries (ADR-014)
+        run: scripts/check-no-c.sh
       - name: Build static binaries
         run: cargo build --release --locked --target x86_64-unknown-linux-musl -p ulai-cli -p ulai-run
       - name: Check they are static
