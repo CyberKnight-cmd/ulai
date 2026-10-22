@@ -32,3 +32,11 @@ path = ["schemas/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 The ULAI contributors"
 SPDX-License-Identifier = "MIT"
+
+# Test fixtures made for ULAI (keys, signatures, expected outcomes): CC0-1.0.
+[[annotations]]
+path = ["tests/fixtures/openpgp/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The ULAI contributors"
+SPDX-License-Identifier = "CC0-1.0"
+

@@ -1,0 +1,15 @@
+rsa3072-text-sha512	valid	upstream appimagetool shape
+rsa3072-binary-sha256	valid	go-appimage shape
+ed25519-text-sha512	valid	legacy EdDSA Ed25519 key
+rsa1024	unsupported	RSA-1024
+sha1-data	unsupported	Sha1
+sha1-selfsig	unsupported	Sha1
+subkey-signs	valid	signing subkey with back-signature
+subkey-no-backsig	invalid	back-signature
+primary-revoked	invalid	revoked
+subkey-revoked	invalid	subkey has been revoked
+expired-before-signing	invalid	had expired when the signature was made
+expired-since	valid+warning	expired since
+no-sign-flag	invalid	not allowed to sign
+two-keys	corrupt	exactly one primary key
+wrong-key	invalid	not in the supplied key

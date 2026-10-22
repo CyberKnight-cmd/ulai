@@ -11,6 +11,7 @@
 
 pub mod appimage;
 pub mod host;
+pub mod signature;
 mod sys;
 
 /// Landlock uapi items missing from `libc` and the `landlock` crate.

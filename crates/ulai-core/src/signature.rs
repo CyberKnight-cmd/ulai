@@ -1,0 +1,562 @@
+// SPDX-FileCopyrightText: 2026 The ULAI contributors
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+//! OpenPGP signature verification for AppImages (SPEC §3.2, ADR-016).
+//!
+//! rPGP parses packets and checks the cryptography. Everything that gives a
+//! signature its meaning is decided here, because rPGP leaves it to the
+//! application: which key may sign, revocation, expiry at signing time, key
+//! flags, subkey back-signatures, and the algorithm policy for every
+//! signature that is relied on.
+
+use std::io::Read;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey, SignedPublicSubKey};
+use pgp::crypto::hash::HashAlgorithm;
+use pgp::crypto::public_key::PublicKeyAlgorithm;
+use pgp::packet::{Signature, SignatureType, SignatureVersion};
+use pgp::ser::Serialize as _;
+use pgp::types::{KeyDetails, KeyVersion, PublicParams, Tag};
+use serde::Serialize;
+
+/// Smallest accepted RSA modulus.
+pub const MIN_RSA_BITS: u16 = 2048;
+/// Largest armored key or signature ULAI will parse.
+pub const MAX_ARMOR_BYTES: usize = 64 * 1024;
+
+/// Why a signature was not accepted.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum Rejection {
+    /// The signature, digest or key binding does not verify, or the key is
+    /// revoked, expired at signing time, or not allowed to sign.
+    #[error("invalid: {0}")]
+    Invalid(String),
+    /// Malformed key or signature data.
+    #[error("corrupt: {0}")]
+    Corrupt(String),
+    /// Well-formed, but outside ULAI's policy (algorithm, hash, key size,
+    /// packet version).
+    #[error("unsupported: {0}")]
+    Unsupported(String),
+}
+
+fn invalid(m: impl Into<String>) -> Rejection {
+    Rejection::Invalid(m.into())
+}
+fn unsupported(m: impl Into<String>) -> Rejection {
+    Rejection::Unsupported(m.into())
+}
+fn corrupt(m: impl Into<String>) -> Rejection {
+    Rejection::Corrupt(m.into())
+}
+
+/// The key and signature behind a valid result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Signer {
+    /// Full fingerprint of the primary key, upper-case hex (v4: 40 digits,
+    /// v6: 64). Never a short key id.
+    pub primary_fingerprint: String,
+    /// Full fingerprint of the key that made the signature (the primary key
+    /// or a signing subkey).
+    pub signing_fingerprint: String,
+    pub signed_by_subkey: bool,
+    pub key_version: u8,
+    pub algorithm: String,
+    /// RSA modulus size; `None` for other algorithms.
+    pub rsa_bits: Option<u16>,
+    pub user_ids: Vec<String>,
+    /// `binary` (0x00) or `text` (0x01).
+    pub signature_type: &'static str,
+    pub hash: &'static str,
+    /// Signature creation time, seconds since the Unix epoch.
+    pub created: u64,
+    /// When the signing key expires (seconds since the epoch), if it does.
+    pub key_expires: Option<u64>,
+}
+
+/// A valid result. `warnings` holds non-fatal findings, such as a key that
+/// expired after it made the signature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Accepted {
+    pub signer: Signer,
+    pub warnings: Vec<String>,
+}
+
+/// Verifies `signature` (ASCII-armored detached OpenPGP signature) over the
+/// bytes read from `data`, using the one key in `key` (ASCII-armored).
+/// `now` is only used for the "expired since signing" warning.
+pub fn verify_detached(
+    key: &[u8],
+    signature: &[u8],
+    data: impl Read,
+    now: SystemTime,
+) -> Result<Accepted, Rejection> {
+    let key = parse_key(key)?;
+    let sig = parse_signature(signature)?;
+    check_data_signature_policy(&sig)?;
+
+    let primary = &key.primary_key;
+    check_key_policy(
+        primary.version(),
+        primary.algorithm(),
+        primary.public_params(),
+        "primary key",
+    )?;
+
+    // The primary key must carry a valid self-signature; the newest one
+    // decides its flags and expiry.
+    let primary_sig = newest_valid_self_signature(&key)?;
+    if !key.details.revocation_signatures.is_empty() {
+        return Err(invalid("the key has been revoked"));
+    }
+
+    let created = sig
+        .created()
+        .map(|t| u64::from(t.as_secs()))
+        .ok_or_else(|| corrupt("signature has no creation time"))?;
+    let primary_created = u64::from(primary.created_at().as_secs());
+    if created < primary_created {
+        return Err(invalid("signature predates the key"));
+    }
+    let primary_expires = expiry(primary_created, primary_sig.key_expiration_time());
+
+    let mut warnings = Vec::new();
+    check_expiry("primary key", primary_expires, created, now, &mut warnings)?;
+
+    // Which key made the signature?
+    let (signer_fp, subkey) = find_signing_key(&key, &sig)?;
+    let (key_version, algorithm, params, key_expires) = match subkey {
+        None => {
+            if !primary_sig.key_flags().sign() {
+                return Err(invalid(
+                    "the primary key is not allowed to sign (key flags)",
+                ));
+            }
+            (
+                primary.version(),
+                primary.algorithm(),
+                primary.public_params(),
+                primary_expires,
+            )
+        }
+        Some(sub) => {
+            let k = &sub.key;
+            check_key_policy(
+                k.version(),
+                k.algorithm(),
+                k.public_params(),
+                "signing subkey",
+            )?;
+            if sub
+                .signatures
+                .iter()
+                .any(|s| s.typ() == Some(SignatureType::SubkeyRevocation))
+            {
+                return Err(invalid("the signing subkey has been revoked"));
+            }
+            let binding = newest_valid_signing_binding(&key, sub)?;
+            let sub_created = u64::from(k.created_at().as_secs());
+            if created < sub_created {
+                return Err(invalid("signature predates the signing subkey"));
+            }
+            let sub_expires = expiry(sub_created, binding.key_expiration_time());
+            check_expiry("signing subkey", sub_expires, created, now, &mut warnings)?;
+            (
+                k.version(),
+                k.algorithm(),
+                k.public_params(),
+                min_opt(sub_expires, primary_expires),
+            )
+        }
+    };
+
+    // Finally, the signature over the data itself (streamed).
+    let verified = match subkey {
+        None => sig.verify(primary, data),
+        Some(sub) => sig.verify(&sub.key, data),
+    };
+    verified.map_err(|e| invalid(format!("signature does not match: {e}")))?;
+
+    if let Some(exp) = sig.signature_expiration_time() {
+        let sig_expires = created.saturating_add(u64::from(exp.as_secs()));
+        if exp.as_secs() != 0 && sig_expires <= unix(now) {
+            warnings.push("the signature itself has expired since it was made".into());
+        }
+    }
+
+    Ok(Accepted {
+        signer: Signer {
+            primary_fingerprint: fingerprint(primary),
+            signing_fingerprint: signer_fp,
+            signed_by_subkey: subkey.is_some(),
+            key_version: key_version_number(key_version),
+            algorithm: algorithm_name(algorithm),
+            rsa_bits: rsa_bits(params),
+            user_ids: key
+                .details
+                .users
+                .iter()
+                .map(|u| String::from_utf8_lossy(u.id.id()).into_owned())
+                .collect(),
+            signature_type: if sig.typ() == Some(SignatureType::Text) {
+                "text"
+            } else {
+                "binary"
+            },
+            hash: hash_name(sig.hash_alg()),
+            created,
+            key_expires,
+        },
+        warnings,
+    })
+}
+
+/// Parses exactly one transferable public key.
+fn parse_key(armored: &[u8]) -> Result<SignedPublicKey, Rejection> {
+    let text = armor_text(armored, "key")?;
+    let (iter, _) = SignedPublicKey::from_string_many(text)
+        .map_err(|e| corrupt(format!("cannot parse the public key: {e}")))?;
+    let mut keys = Vec::new();
+    for k in iter {
+        keys.push(k.map_err(|e| corrupt(format!("cannot parse the public key: {e}")))?);
+    }
+    match keys.len() {
+        1 => Ok(keys.pop().expect("one key")),
+        0 => Err(corrupt("no public key found")),
+        n => Err(corrupt(format!(
+            "expected exactly one primary key, found {n}"
+        ))),
+    }
+}
+
+/// Parses exactly one detached signature packet.
+fn parse_signature(armored: &[u8]) -> Result<Signature, Rejection> {
+    let text = armor_text(armored, "signature")?;
+    let (sig, _) = DetachedSignature::from_string(text)
+        .map_err(|e| corrupt(format!("cannot parse the signature: {e}")))?;
+    Ok(sig.signature)
+}
+
+/// Section contents are NUL-padded; the armor itself must be ASCII.
+fn armor_text<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str, Rejection> {
+    let end = bytes.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    let bytes = &bytes[..end];
+    if bytes.len() > MAX_ARMOR_BYTES {
+        return Err(corrupt(format!(
+            "{what} is larger than {MAX_ARMOR_BYTES} bytes"
+        )));
+    }
+    if bytes.contains(&0) {
+        return Err(corrupt(format!(
+            "{what} contains NUL bytes inside the armor"
+        )));
+    }
+    std::str::from_utf8(bytes).map_err(|_| corrupt(format!("{what} is not ASCII armor")))
+}
+
+fn check_hash(alg: HashAlgorithm, what: &str) -> Result<(), Rejection> {
+    match alg {
+        HashAlgorithm::Sha256 | HashAlgorithm::Sha384 | HashAlgorithm::Sha512 => Ok(()),
+        other => Err(unsupported(format!(
+            "{what} uses hash {other:?}; only SHA-256, SHA-384 and SHA-512 are accepted"
+        ))),
+    }
+}
+
+fn check_sig_version(sig: &Signature, what: &str) -> Result<(), Rejection> {
+    match sig.version() {
+        SignatureVersion::V4 | SignatureVersion::V6 => Ok(()),
+        v => Err(unsupported(format!(
+            "{what} is a {v:?} signature; only v4 and v6 are supported"
+        ))),
+    }
+}
+
+/// Policy for a signature ULAI relies on (self, binding, back-signature).
+fn check_sig_policy(sig: &Signature, what: &str) -> Result<(), Rejection> {
+    check_sig_version(sig, what)?;
+    let alg = sig
+        .hash_alg()
+        .ok_or_else(|| unsupported(format!("{what}: unknown hash")))?;
+    check_hash(alg, what)
+}
+
+fn check_data_signature_policy(sig: &Signature) -> Result<(), Rejection> {
+    check_sig_policy(sig, "the signature")?;
+    match sig.typ() {
+        Some(SignatureType::Binary | SignatureType::Text) => Ok(()),
+        t => Err(unsupported(format!(
+            "signature type {t:?}; expected binary or text"
+        ))),
+    }
+}
+
+fn check_key_policy(
+    version: KeyVersion,
+    alg: PublicKeyAlgorithm,
+    params: &PublicParams,
+    what: &str,
+) -> Result<(), Rejection> {
+    match version {
+        KeyVersion::V4 | KeyVersion::V6 => {}
+        v => {
+            return Err(unsupported(format!(
+                "{what} is a {v:?} key; only v4 and v6 are supported"
+            )));
+        }
+    }
+    match (alg, params) {
+        (PublicKeyAlgorithm::RSA | PublicKeyAlgorithm::RSASign, PublicParams::RSA(_)) => {
+            let bits =
+                rsa_bits(params).ok_or_else(|| corrupt(format!("{what}: bad RSA parameters")))?;
+            if bits < MIN_RSA_BITS {
+                return Err(unsupported(format!(
+                    "{what} is RSA-{bits}; at least {MIN_RSA_BITS} bits are required"
+                )));
+            }
+            Ok(())
+        }
+        (PublicKeyAlgorithm::EdDSALegacy, PublicParams::EdDSALegacy(p)) => {
+            // Only Ed25519 is accepted in the legacy EdDSA form.
+            let curve = format!("{p:?}");
+            if curve.contains("Ed25519") {
+                Ok(())
+            } else {
+                Err(unsupported(format!(
+                    "{what}: EdDSA curve other than Ed25519"
+                )))
+            }
+        }
+        (PublicKeyAlgorithm::Ed25519, PublicParams::Ed25519(_)) => Ok(()),
+        (a, _) => Err(unsupported(format!(
+            "{what} uses {a:?}; only RSA and Ed25519 are supported"
+        ))),
+    }
+}
+
+/// Bit length of an RSA modulus, from its OpenPGP MPI encoding (the first
+/// two bytes of the serialized public parameters).
+fn rsa_bits(params: &PublicParams) -> Option<u16> {
+    let PublicParams::RSA(_) = params else {
+        return None;
+    };
+    let bytes = params.to_bytes().ok()?;
+    Some(u16::from_be_bytes([*bytes.first()?, *bytes.get(1)?]))
+}
+
+/// The newest self-signature on the primary key that verifies and passes
+/// policy: a direct-key signature, or a self-certification of a user id.
+fn newest_valid_self_signature(key: &SignedPublicKey) -> Result<&Signature, Rejection> {
+    let primary = &key.primary_key;
+    let mut candidates: Vec<(&Signature, Result<(), Rejection>)> = Vec::new();
+    for sig in &key.details.direct_signatures {
+        let r = check_sig_policy(sig, "a direct-key self-signature").and_then(|()| {
+            sig.verify_key(primary)
+                .map_err(|e| invalid(format!("direct-key self-signature does not verify: {e}")))
+        });
+        candidates.push((sig, r));
+    }
+    for user in &key.details.users {
+        for sig in &user.signatures {
+            if !matches!(
+                sig.typ(),
+                Some(
+                    SignatureType::CertGeneric
+                        | SignatureType::CertPersona
+                        | SignatureType::CertCasual
+                        | SignatureType::CertPositive
+                )
+            ) || !issued_by(sig, primary)
+            {
+                continue;
+            }
+            let r = check_sig_policy(sig, "a self-signature").and_then(|()| {
+                sig.verify_certification(primary, Tag::UserId, &user.id)
+                    .map_err(|e| invalid(format!("self-signature does not verify: {e}")))
+            });
+            candidates.push((sig, r));
+        }
+    }
+    let mut best: Option<&Signature> = None;
+    let mut last_err = invalid("the key has no self-signature");
+    for (sig, r) in candidates {
+        match r {
+            Ok(()) if best.is_none_or(|b| created(sig) >= created(b)) => best = Some(sig),
+            Ok(()) => {}
+            Err(e) => last_err = e,
+        }
+    }
+    best.ok_or(last_err)
+}
+
+/// The newest subkey binding that verifies, passes policy, allows signing,
+/// and carries a valid embedded primary-key binding (back-signature, 0x19).
+fn newest_valid_signing_binding<'a>(
+    key: &SignedPublicKey,
+    sub: &'a SignedPublicSubKey,
+) -> Result<&'a Signature, Rejection> {
+    let mut best: Option<&Signature> = None;
+    let mut last_err = invalid("the signing subkey has no binding signature");
+    for sig in &sub.signatures {
+        if sig.typ() != Some(SignatureType::SubkeyBinding) {
+            continue;
+        }
+        let r = check_sig_policy(sig, "the subkey binding signature")
+            .and_then(|()| {
+                sig.verify_subkey_binding(&key.primary_key, &sub.key)
+                    .map_err(|e| invalid(format!("subkey binding does not verify: {e}")))
+            })
+            .and_then(|()| {
+                if sig.key_flags().sign() {
+                    Ok(())
+                } else {
+                    Err(invalid("the subkey is not allowed to sign (key flags)"))
+                }
+            })
+            .and_then(|()| {
+                let back = sig.embedded_signature().ok_or_else(|| {
+                    invalid(
+                        "the signing subkey has no primary-key binding signature (back-signature)",
+                    )
+                })?;
+                if back.typ() != Some(SignatureType::KeyBinding) {
+                    return Err(invalid(
+                        "the embedded signature is not a primary-key binding",
+                    ));
+                }
+                check_sig_policy(back, "the back-signature")?;
+                back.verify_primary_key_binding(&sub.key, &key.primary_key)
+                    .map_err(|e| invalid(format!("back-signature does not verify: {e}")))
+            });
+        match r {
+            Ok(()) => {
+                if best.is_none_or(|b| created(sig) >= created(b)) {
+                    best = Some(sig);
+                }
+            }
+            Err(e) => last_err = e,
+        }
+    }
+    best.ok_or(last_err)
+}
+
+/// Finds the key that made `sig`: the primary key or one subkey, matched by
+/// issuer fingerprint or issuer key id.
+fn find_signing_key<'a>(
+    key: &'a SignedPublicKey,
+    sig: &Signature,
+) -> Result<(String, Option<&'a SignedPublicSubKey>), Rejection> {
+    if sig.issuer_fingerprint().is_empty() && sig.issuer_key_id().is_empty() {
+        return Err(corrupt("the signature names no issuer"));
+    }
+    if issued_by(sig, &key.primary_key) {
+        return Ok((fingerprint(&key.primary_key), None));
+    }
+    let matches: Vec<&SignedPublicSubKey> = key
+        .public_subkeys
+        .iter()
+        .filter(|s| issued_by(sig, &s.key))
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok((fingerprint(&one.key), Some(one))),
+        [] => Err(invalid(
+            "the signature was made by a key that is not in the supplied key",
+        )),
+        _ => Err(corrupt("the signature issuer matches more than one subkey")),
+    }
+}
+
+fn issued_by(sig: &Signature, key: &impl KeyDetails) -> bool {
+    let fps = sig.issuer_fingerprint();
+    if !fps.is_empty() {
+        return fps.iter().any(|fp| **fp == key.fingerprint());
+    }
+    sig.issuer_key_id()
+        .iter()
+        .any(|id| **id == key.legacy_key_id())
+}
+
+fn created(sig: &Signature) -> u64 {
+    sig.created().map_or(0, |t| u64::from(t.as_secs()))
+}
+
+fn expiry(key_created: u64, validity: Option<pgp::types::Duration>) -> Option<u64> {
+    match validity.map(|d| d.as_secs()) {
+        None | Some(0) => None,
+        Some(secs) => Some(key_created.saturating_add(u64::from(secs))),
+    }
+}
+
+/// Expired before signing → invalid. Expired since → warning.
+fn check_expiry(
+    what: &str,
+    expires: Option<u64>,
+    signed: u64,
+    now: SystemTime,
+    warnings: &mut Vec<String>,
+) -> Result<(), Rejection> {
+    let Some(exp) = expires else { return Ok(()) };
+    if exp <= signed {
+        return Err(invalid(format!(
+            "the {what} had expired when the signature was made"
+        )));
+    }
+    if exp <= unix(now) {
+        warnings.push(format!(
+            "the {what} has expired since the signature was made"
+        ));
+    }
+    Ok(())
+}
+
+fn min_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.min(y)),
+        (x, None) => x,
+        (None, y) => y,
+    }
+}
+
+fn unix(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_secs()
+}
+
+fn fingerprint(key: &impl KeyDetails) -> String {
+    hex::encode_upper(key.fingerprint().as_bytes())
+}
+
+fn key_version_number(v: KeyVersion) -> u8 {
+    match v {
+        KeyVersion::V2 => 2,
+        KeyVersion::V3 => 3,
+        KeyVersion::V4 => 4,
+        KeyVersion::V5 => 5,
+        KeyVersion::V6 => 6,
+        _ => 0,
+    }
+}
+
+fn algorithm_name(a: PublicKeyAlgorithm) -> String {
+    match a {
+        PublicKeyAlgorithm::RSA | PublicKeyAlgorithm::RSASign => "RSA".into(),
+        PublicKeyAlgorithm::EdDSALegacy => "Ed25519 (legacy EdDSA)".into(),
+        PublicKeyAlgorithm::Ed25519 => "Ed25519".into(),
+        other => format!("{other:?}"),
+    }
+}
+
+fn hash_name(h: Option<HashAlgorithm>) -> &'static str {
+    match h {
+        Some(HashAlgorithm::Sha256) => "SHA-256",
+        Some(HashAlgorithm::Sha384) => "SHA-384",
+        Some(HashAlgorithm::Sha512) => "SHA-512",
+        _ => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests;
