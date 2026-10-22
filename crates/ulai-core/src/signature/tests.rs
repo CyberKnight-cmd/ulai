@@ -17,9 +17,10 @@ fn read(name: &str) -> Vec<u8> {
     std::fs::read(fixtures().join(name)).unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
-/// 2026-10-22, well after every fixture key was made (2020-01-01).
+/// 2027-01-01: after every fixture signature was made (GnuPG ones at
+/// 2020-01-01 + n days, Sequoia and RFC ones in 2022–2026).
 fn now() -> SystemTime {
-    UNIX_EPOCH + Duration::from_secs(1_792_627_200)
+    UNIX_EPOCH + Duration::from_secs(1_798_761_600)
 }
 
 fn run(case: &str) -> Result<Accepted, Rejection> {
@@ -58,7 +59,7 @@ fn every_gnupg_case_has_the_expected_outcome() {
         }
         n += 1;
     }
-    assert_eq!(n, 16, "all cases ran");
+    assert_eq!(n, 19, "all cases ran");
 }
 
 #[test]

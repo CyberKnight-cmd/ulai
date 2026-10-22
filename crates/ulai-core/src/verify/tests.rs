@@ -6,6 +6,7 @@
 //! are tested against tool-made fixtures in `tests/fixtures/appimage`.
 
 use std::io::Write;
+use std::time::{Duration, UNIX_EPOCH};
 
 use super::*;
 use crate::testing_appimage::Builder;
@@ -44,15 +45,39 @@ fn exit_codes_are_stable() {
         Unsigned,
         SignatureUnverifiable,
         Invalid,
+        SignatureFromFuture,
         Corrupt,
         Unsupported,
     ]
     .iter()
     .map(|s| s.exit_code())
     .collect();
-    assert_eq!(got, [0, 3, 3, 4, 5, 5]);
+    assert_eq!(got, [0, 3, 3, 4, 4, 5, 5]);
     let json = serde_json::to_value(SignatureUnverifiable).unwrap();
     assert_eq!(json, "signature_unverifiable");
+    let json = serde_json::to_value(SignatureFromFuture).unwrap();
+    assert_eq!(json, "signature_from_future");
+}
+
+/// A tool-made AppImage checked with the clock set to before its signature
+/// was made (a computer whose clock is wrong).
+#[test]
+fn signature_from_the_future_has_its_own_status() {
+    let app = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/appimage/upstream-ed25519.AppImage");
+    let r = run(
+        &app,
+        &Options {
+            now: UNIX_EPOCH + Duration::from_secs(1_577_836_800),
+            ..Options::default()
+        },
+    );
+    assert_eq!(r.status, Status::SignatureFromFuture);
+    assert_eq!(r.status.exit_code(), 4);
+    let reason = r.reason.unwrap();
+    assert!(reason.starts_with("the signature was created "), "{reason}");
+    assert!(reason.contains(" days in the future"), "{reason}");
+    assert!(reason.contains("clock"), "{reason}");
 }
 
 #[test]

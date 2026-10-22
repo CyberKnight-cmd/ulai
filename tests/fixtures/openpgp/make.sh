@@ -108,6 +108,27 @@ BI=$(fpr bidi@fixtures.ulai.invalid)
 key "$BI" > bidi-uid.key.asc; sig $((T0+DAY)) "$BI" --digest-algo SHA256 > bidi-uid.sig.asc
 case_ bidi-uid valid "user id with bidi controls; must be escaped when shown"
 
+# --- notations (RFC 9580 §5.2.3.24): ULAI knows no critical notation ---
+NOTE='critical@fixtures.ulai.invalid=1'
+key "$R" > notation-noncritical.key.asc
+sig $((T0+DAY)) "$R" --digest-algo SHA256 --sig-notation "$NOTE" > notation-noncritical.sig.asc
+case_ notation-noncritical valid "non-critical notation is ignored"
+key "$R" > crit-notation-data.key.asc
+sig $((T0+DAY)) "$R" --digest-algo SHA256 --sig-notation "!$NOTE" > crit-notation-data.sig.asc
+case_ crit-notation-data invalid "critical notation"
+# GnuPG refuses to sign with a key whose only self-signature carries an
+# unknown critical notation. So: sign first, then add a second user id
+# whose self-signature has the notation, and export only that user id.
+# (The binding-signature case is made with rPGP in tests_rules.rs, because
+# GnuPG has no way to re-bind an existing subkey with a notation.)
+at $T0 --quick-gen-key 'critself <critself@fixtures.ulai.invalid>' ed25519 sign never
+CS=$(fpr critself@fixtures.ulai.invalid)
+sig $((T0+DAY)) "$CS" --digest-algo SHA256 > crit-notation-selfsig.sig.asc
+at $((T0+2*DAY)) --cert-notation "!$NOTE" --quick-add-uid "$CS" 'critself2 <critself2@fixtures.ulai.invalid>'
+gpg --armor --export --export-filter 'keep-uid=uid = critself2 <critself2@fixtures.ulai.invalid>' "$CS" \
+  2>/dev/null > crit-notation-selfsig.key.asc
+case_ crit-notation-selfsig invalid "critical notation"
+
 # --- structure ---
 key "$R" "$E" > two-keys.key.asc; cp rsa3072-binary-sha256.sig.asc two-keys.sig.asc
 case_ two-keys corrupt "exactly one primary key"

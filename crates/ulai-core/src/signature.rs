@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey, SignedPublicSubKey};
 use pgp::crypto::hash::HashAlgorithm;
 use pgp::crypto::public_key::PublicKeyAlgorithm;
-use pgp::packet::{Signature, SignatureType, SignatureVersion};
+use pgp::packet::{Signature, SignatureType, SignatureVersion, SubpacketData};
 use pgp::ser::Serialize as _;
 use pgp::types::{KeyDetails, KeyVersion, PublicParams, Tag};
 use serde::Serialize;
@@ -25,6 +25,14 @@ use serde::Serialize;
 pub const MIN_RSA_BITS: u16 = 2048;
 /// Largest armored key or signature ULAI will parse.
 pub const MAX_ARMOR_BYTES: usize = 64 * 1024;
+/// How far in the future a signature's creation time may be, to allow for
+/// clock skew between signer and verifier. Same value as Sequoia's
+/// `CLOCK_SKEW_TOLERANCE`.
+pub const CLOCK_SKEW_TOLERANCE_SECS: u64 = 30 * 60;
+/// Notation names ULAI understands when they are marked critical. None: a
+/// critical notation makes the signature carrying it unusable (RFC 9580
+/// §5.2.3.24).
+const KNOWN_CRITICAL_NOTATIONS: &[&[u8]] = &[];
 
 /// Why a signature was not accepted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -40,6 +48,28 @@ pub enum Rejection {
     /// packet version).
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// A signature ULAI relies on (data, self, binding or back-signature)
+    /// was created more than [`CLOCK_SKEW_TOLERANCE_SECS`] after `now`.
+    #[error("invalid: {what} was created {} in the future", human_duration(.seconds))]
+    FromFuture {
+        what: String,
+        /// How far the creation time is after `now`.
+        seconds: u64,
+    },
+}
+
+/// `2_100` → `35 minutes`, `7_500` → `2 hours 5 minutes`, `200_000` → `2 days`.
+pub fn human_duration(seconds: &u64) -> String {
+    let plural = |n: u64, unit: &str| format!("{n} {unit}{}", if n == 1 { "" } else { "s" });
+    let (m, h, d) = (seconds / 60, seconds / 3600, seconds / 86_400);
+    match () {
+        () if h == 0 => plural(m, "minute"),
+        () if d < 2 => match m % 60 {
+            0 => plural(h, "hour"),
+            rest => format!("{} {}", plural(h, "hour"), plural(rest, "minute")),
+        },
+        () => plural(d, "day"),
+    }
 }
 
 fn invalid(m: impl Into<String>) -> Rejection {
@@ -86,7 +116,9 @@ pub struct Accepted {
 
 /// Verifies `signature` (ASCII-armored detached OpenPGP signature) over the
 /// bytes read from `data`, using the one key in `key` (ASCII-armored).
-/// `now` is only used for the "expired since signing" warning.
+/// `now` is the verifier's clock: signatures created more than
+/// [`CLOCK_SKEW_TOLERANCE_SECS`] after it are rejected, and keys that expired
+/// since signing produce a warning.
 pub fn verify_detached(
     key: &[u8],
     signature: &[u8],
@@ -95,7 +127,7 @@ pub fn verify_detached(
 ) -> Result<Accepted, Rejection> {
     let key = parse_key(key)?;
     let sig = parse_signature(signature)?;
-    check_data_signature_policy(&sig)?;
+    check_data_signature_policy(&sig, now)?;
 
     let primary = &key.primary_key;
     check_key_policy(
@@ -107,7 +139,7 @@ pub fn verify_detached(
 
     // The primary key must carry a valid self-signature; the newest one
     // decides its flags and expiry.
-    let primary_sig = newest_valid_self_signature(&key)?;
+    let primary_sig = newest_valid_self_signature(&key, now)?;
     if !key.details.revocation_signatures.is_empty() {
         return Err(invalid("the key has been revoked"));
     }
@@ -156,7 +188,7 @@ pub fn verify_detached(
             {
                 return Err(invalid("the signing subkey has been revoked"));
             }
-            let binding = newest_valid_signing_binding(&key, sub)?;
+            let binding = newest_valid_signing_binding(&key, sub, now)?;
             let sub_created = u64::from(k.created_at().as_secs());
             if created < sub_created {
                 return Err(invalid("signature predates the signing subkey"));
@@ -227,11 +259,16 @@ fn is_armor(bytes: &[u8]) -> bool {
     bytes[start..].starts_with(b"-----BEGIN PGP ")
 }
 
-/// Strips NUL padding (embedded sections are padded to their full size) and
-/// applies the size limit.
-fn trimmed<'a>(bytes: &'a [u8], what: &str) -> Result<&'a [u8], Rejection> {
-    let end = bytes.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
-    let bytes = &bytes[..end];
+/// Strips the NUL padding after ASCII armor (embedded sections are armored
+/// and padded to their full size) and applies the size limit. Binary input
+/// is left as it is: its last bytes may legitimately be zero.
+fn trimmed<'a>(input: &'a [u8], what: &str) -> Result<&'a [u8], Rejection> {
+    let end = input.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    let bytes = if is_armor(&input[..end]) {
+        &input[..end]
+    } else {
+        input
+    };
     if bytes.len() > MAX_ARMOR_BYTES {
         return Err(corrupt(format!(
             "{what} is larger than {MAX_ARMOR_BYTES} bytes"
@@ -355,17 +392,62 @@ fn check_sig_version(sig: &Signature, what: &str) -> Result<(), Rejection> {
     }
 }
 
-/// Policy for a signature ULAI relies on (self, binding, back-signature).
-fn check_sig_policy(sig: &Signature, what: &str) -> Result<(), Rejection> {
+/// Policy for every signature ULAI relies on (data, self, binding,
+/// back-signature): version, hash, creation time not in the future, and no
+/// critical subpacket ULAI does not understand.
+fn check_sig_policy(sig: &Signature, what: &str, now: SystemTime) -> Result<(), Rejection> {
     check_sig_version(sig, what)?;
     let alg = sig
         .hash_alg()
         .ok_or_else(|| unsupported(format!("{what}: unknown hash")))?;
-    check_hash(alg, what)
+    check_hash(alg, what)?;
+    check_not_future(sig, what, now)?;
+    check_critical_subpackets(sig, what)
 }
 
-fn check_data_signature_policy(sig: &Signature) -> Result<(), Rejection> {
-    check_sig_policy(sig, "the signature")?;
+fn check_not_future(sig: &Signature, what: &str, now: SystemTime) -> Result<(), Rejection> {
+    let (created, now) = (created(sig), unix(now));
+    if created > now.saturating_add(CLOCK_SKEW_TOLERANCE_SECS) {
+        return Err(Rejection::FromFuture {
+            what: what.to_owned(),
+            seconds: created - now,
+        });
+    }
+    Ok(())
+}
+
+/// RFC 9580 §5.2.3.7: a critical subpacket the verifier does not understand
+/// makes the signature unusable. rPGP 0.21 parses such subpackets without
+/// complaint, so ULAI checks the hashed area itself. (A critical subpacket in
+/// the unhashed area is not covered by the signature; anyone could add one,
+/// so it carries no meaning and is ignored.)
+fn check_critical_subpackets(sig: &Signature, what: &str) -> Result<(), Rejection> {
+    let Some(config) = sig.config() else {
+        return Ok(());
+    };
+    for sp in config.hashed_subpackets().filter(|sp| sp.is_critical) {
+        let unknown = match &sp.data {
+            SubpacketData::Notation(n) if !KNOWN_CRITICAL_NOTATIONS.contains(&n.name.as_ref()) => {
+                format!(
+                    "the critical notation {:?}",
+                    String::from_utf8_lossy(&n.name)
+                )
+            }
+            SubpacketData::Other(t, _) | SubpacketData::Experimental(t, _) => {
+                format!("critical subpacket type {t}")
+            }
+            SubpacketData::RegularExpression(_) => "a critical regular expression".into(),
+            _ => continue,
+        };
+        return Err(invalid(format!(
+            "{what} carries {unknown}, which ULAI does not understand"
+        )));
+    }
+    Ok(())
+}
+
+fn check_data_signature_policy(sig: &Signature, now: SystemTime) -> Result<(), Rejection> {
+    check_sig_policy(sig, "the signature", now)?;
     match sig.typ() {
         Some(SignatureType::Binary | SignatureType::Text) => Ok(()),
         t => Err(unsupported(format!(
@@ -429,11 +511,14 @@ fn rsa_bits(params: &PublicParams) -> Option<u16> {
 
 /// The newest self-signature on the primary key that verifies and passes
 /// policy: a direct-key signature, or a self-certification of a user id.
-fn newest_valid_self_signature(key: &SignedPublicKey) -> Result<&Signature, Rejection> {
+fn newest_valid_self_signature(
+    key: &SignedPublicKey,
+    now: SystemTime,
+) -> Result<&Signature, Rejection> {
     let primary = &key.primary_key;
     let mut candidates: Vec<(&Signature, Result<(), Rejection>)> = Vec::new();
     for sig in &key.details.direct_signatures {
-        let r = check_sig_policy(sig, "a direct-key self-signature").and_then(|()| {
+        let r = check_sig_policy(sig, "a direct-key self-signature", now).and_then(|()| {
             sig.verify_key(primary)
                 .map_err(|e| invalid(format!("direct-key self-signature does not verify: {e}")))
         });
@@ -453,7 +538,7 @@ fn newest_valid_self_signature(key: &SignedPublicKey) -> Result<&Signature, Reje
             {
                 continue;
             }
-            let r = check_sig_policy(sig, "a self-signature").and_then(|()| {
+            let r = check_sig_policy(sig, "a self-signature", now).and_then(|()| {
                 sig.verify_certification(primary, Tag::UserId, &user.id)
                     .map_err(|e| invalid(format!("self-signature does not verify: {e}")))
             });
@@ -477,6 +562,7 @@ fn newest_valid_self_signature(key: &SignedPublicKey) -> Result<&Signature, Reje
 fn newest_valid_signing_binding<'a>(
     key: &SignedPublicKey,
     sub: &'a SignedPublicSubKey,
+    now: SystemTime,
 ) -> Result<&'a Signature, Rejection> {
     let mut best: Option<&Signature> = None;
     let mut last_err = invalid("the signing subkey has no binding signature");
@@ -484,7 +570,7 @@ fn newest_valid_signing_binding<'a>(
         if sig.typ() != Some(SignatureType::SubkeyBinding) {
             continue;
         }
-        let r = check_sig_policy(sig, "the subkey binding signature")
+        let r = check_sig_policy(sig, "the subkey binding signature", now)
             .and_then(|()| {
                 sig.verify_subkey_binding(&key.primary_key, &sub.key)
                     .map_err(|e| invalid(format!("subkey binding does not verify: {e}")))
@@ -507,7 +593,7 @@ fn newest_valid_signing_binding<'a>(
                         "the embedded signature is not a primary-key binding",
                     ));
                 }
-                check_sig_policy(back, "the back-signature")?;
+                check_sig_policy(back, "the back-signature", now)?;
                 back.verify_primary_key_binding(&sub.key, &key.primary_key)
                     .map_err(|e| invalid(format!("back-signature does not verify: {e}")))
             });
@@ -641,3 +727,5 @@ fn hash_name(h: Option<HashAlgorithm>) -> &'static str {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_rules;

@@ -119,6 +119,27 @@ exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
     self-signatures and binding signatures too, not only to the file
     signature.
   - v5 (LibrePGP) keys and signatures are unsupported.
+  - **Signatures from the future.** A signature whose creation time is more
+    than 30 minutes after the verifier's clock is rejected (30 minutes is
+    Sequoia's `CLOCK_SKEW_TOLERANCE`; up to and including 30 minutes is
+    accepted). This applies to every signature relied on: the file
+    signature, self-signatures, subkey bindings and back-signatures. A
+    future self-signature or binding is not used; if no other valid one
+    remains, the result is `signature_from_future` (exit 4). The message
+    says how far in the future the signature is and asks the user to check
+    the system clock.
+  - **Critical subpackets.** RFC 9580 §5.2.3.7: a signature whose *hashed*
+    area carries a critical subpacket ULAI does not understand is not used.
+    ULAI understands no critical notation (the list of known notations in
+    code is empty), so any critical notation counts, as do critical
+    subpackets of unknown or experimental type and critical regular
+    expressions. On a self-signature or binding this makes the key or
+    subkey unusable unless another valid self-signature or binding exists.
+    The check is ULAI's own and runs before the cryptography; it does not
+    rely on rPGP. Critical subpackets in the unhashed area are not covered
+    by the signature, so anyone could add them; they are ignored.
+  - NUL padding is stripped only after ASCII armor (embedded sections are
+    armored and padded). Binary keys and signatures are read as they are.
 
 #### 3.2.1 Detached signatures (legacy AppImages, ADR-016)
 
@@ -606,6 +627,7 @@ changes) and `"status"` (a string). The `ulai doctor` schema is in
 | 3 | `unsigned` | No signature (empty or missing `.sha256_sig`, and no detached signature found) |
 | 3 | `signature_unverifiable` | A detached signature was found, but no key is available to check it (ADR-016) |
 | 4 | `invalid` | The signature or digest does not match, or the key is revoked |
+| 4 | `signature_from_future` | A signature relied on was created more than 30 minutes after this computer's clock (§3.2); check the clock |
 | 5 | `corrupt` or `unsupported` | The ELF or sections are malformed, or the algorithm, key or filesystem is not supported |
 | 1 | — | Internal error |
 | 2 | — | Usage error |

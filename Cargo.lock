@@ -2382,6 +2382,7 @@ dependencies = [
  "libc",
  "object",
  "pgp",
+ "rand_chacha",
  "ruzstd",
  "serde",
  "serde_json",

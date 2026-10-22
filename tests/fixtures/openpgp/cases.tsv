@@ -12,5 +12,8 @@ expired-before-signing	invalid	had expired when the signature was made
 expired-since	valid+warning	expired since
 no-sign-flag	invalid	not allowed to sign
 bidi-uid	valid	user id with bidi controls; must be escaped when shown
+notation-noncritical	valid	non-critical notation is ignored
+crit-notation-data	invalid	critical notation
+crit-notation-selfsig	invalid	critical notation
 two-keys	corrupt	exactly one primary key
 wrong-key	invalid	not in the supplied key

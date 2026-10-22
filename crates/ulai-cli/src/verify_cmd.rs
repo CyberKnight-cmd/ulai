@@ -75,6 +75,7 @@ fn human(r: &Report) -> String {
         Status::Unsigned => ("✗", "unsigned"),
         Status::SignatureUnverifiable => ("?", "signature cannot be checked"),
         Status::Invalid => ("✗", "INVALID"),
+        Status::SignatureFromFuture => ("✗", "INVALID: signature dated in the future"),
         Status::Corrupt => ("✗", "corrupt"),
         Status::Unsupported => ("✗", "unsupported"),
     };

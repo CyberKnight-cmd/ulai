@@ -35,6 +35,9 @@ pub enum Status {
     Unsigned,
     SignatureUnverifiable,
     Invalid,
+    /// A signature was created more than 30 minutes after the verifier's
+    /// clock (SPEC §3.2). Exit code as `invalid`.
+    SignatureFromFuture,
     Corrupt,
     Unsupported,
 }
@@ -45,7 +48,7 @@ impl Status {
         match self {
             Status::Valid => 0,
             Status::Unsigned | Status::SignatureUnverifiable => 3,
-            Status::Invalid => 4,
+            Status::Invalid | Status::SignatureFromFuture => 4,
             Status::Corrupt | Status::Unsupported => 5,
         }
     }
@@ -129,6 +132,13 @@ impl Report {
             Rejection::Invalid(m) => (Status::Invalid, m),
             Rejection::Corrupt(m) => (Status::Corrupt, m),
             Rejection::Unsupported(m) => (Status::Unsupported, m),
+            Rejection::FromFuture { what, seconds } => (
+                Status::SignatureFromFuture,
+                format!(
+                    "{what} was created {} in the future; check that this computer's clock is set correctly",
+                    signature::human_duration(&seconds)
+                ),
+            ),
         };
         self.status = status;
         self.reason = Some(reason);

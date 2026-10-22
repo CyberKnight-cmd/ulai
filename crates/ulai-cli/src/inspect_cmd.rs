@@ -58,6 +58,7 @@ fn sig_line(s: SigStatus) -> &'static str {
         SigStatus::Unsigned => "✗ unsigned",
         SigStatus::SignatureUnverifiable => "? signature found but cannot be checked",
         SigStatus::Invalid => "✗ signature INVALID",
+        SigStatus::SignatureFromFuture => "✗ signature dated in the future",
         SigStatus::Corrupt => "✗ signature data corrupt",
         SigStatus::Unsupported => "✗ signature unsupported",
     }
