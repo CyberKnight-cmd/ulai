@@ -413,22 +413,41 @@ Add one entry per experiment, in this format:
     | sqop | 100 | 2 | 15 |
     | ulai-sop | 84 | 16 | 15 |
 
-    Both miss the same 2 "V6 issuer FP" cases. ULAI's 14 own misses:
-    - **Accepts what should be rejected (4), security-relevant:**
-      - signatures whose creation time is in the future (3 cases): ULAI
-        does not compare the signature time with the current time;
-      - a signature with a critical unknown notation (1 case): RFC 9580
-        requires treating it as invalid. rPGP rejects critical unknown
-        subpackets (that case passes) but not critical notations.
-      - sqop rejects all four.
-    - **Rejects what should be accepted, fail-closed (10):**
-      - certificates containing a subkey with an unknown curve or
-        algorithm ("Mock PQ subkey", 6 cases): rPGP 0.21 fails to parse the
-        whole certificate, so a signature by a known key is rejected;
-      - a mock certificate over ULAI's 64 KiB key limit (1 case);
-      - a signature file carrying unknown packets next to the signature
-        ("SIG4_ricarda", 3 cases): rPGP fails with "PacketBodyReader
-        errored".
+    Both miss the same 2 "V6 issuer FP" cases. ULAI's 14 own misses, as
+    first analysed:
+    - **Accepted what should be rejected (4), security-relevant:**
+      signatures whose creation time is in the future (3 cases), and a
+      signature with a critical unknown notation (1 case). rPGP rejects
+      critical subpackets of unknown type while hashing (that case passed)
+      but not critical notations. sqop rejects all four.
+    - **Rejected what should be accepted, fail-closed (10):** "Mock PQ
+      subkey" (6), one mock certificate over ULAI's 64 KiB key limit, and
+      "SIG4_ricarda" plus the two mixed cases that use Ricarda's
+      certificate (3).
+  - **Correction, after re-analysis (same day):** the 3 Ricarda cases were
+    **not** an rPGP problem, and those signatures carry no unknown packets.
+    `ulai-sop` passes each signature to the verifier in binary form.
+    Ricarda's binary signature ends in a `0x00` byte, and ULAI stripped
+    trailing NULs from binary input as well as from armor, which truncated
+    the signature ("PacketBodyReader errored"). This was a ULAI bug. It was
+    fixed in `4c587eb`, together with a regression test.
+  - Re-checked locally on Arch Linux after the fixes, case by case, from
+    the artifacts saved in `results.json`, with `tools/ulai-sop`. The full
+    suite has **not** been rerun.
+    - The future-dated (3), critical-notation (1) and critical-subpacket
+      cases are now rejected. Their unhashed variants are accepted, as the
+      suite allows.
+    - SIG4_ricarda and the two mixed Ricarda cases are now accepted.
+    - "Mock PQ subkey": all `Unknown algo …` variants and all `… MPI
+      encoding` variants are accepted. The three `… unknown curve, opaque
+      encoding, small` cases (ECDSA, EdDSA, ECDH) still fail inside rPGP
+      ("InvalidPacketContent"). Reported upstream as rpgp/rpgp#869, with a
+      minimal reproducer that fails on rPGP 0.21.0 and on `main` at
+      `136e5c883096`. The `big` variants are not in `results.json` (too
+      large), so they were not re-checked.
+    - The two "V6 issuer FP" cases fail in rPGP's signature parser
+      ("Inconsistent subpacket length"). sqop misses them too, so they were
+      not reported.
   - Raw results (`results.json`, 664 KB) are not committed; rerun with
     `tools/ulai-sop` and the payload described above.
 - 2026-10-22 · Ubuntu machine (HP SSD S650 240GB, `sdc`) · **hardware
@@ -440,3 +459,29 @@ Add one entry per experiment, in this format:
     heavy write on the 1 TB HDD (`TMPDIR=/srv/archive/ulai-tmp`), and no disk
     error was logged in that boot.
   - The SSD's health (SMART) has not been checked; that needs root.
+- 2026-10-22 · Arch Linux, kernel 7.2.9-arch1-1 · **rPGP 0.21 and packets
+  next to a detached signature** (group 4 of the planned rPGP issue)
+  - Method: a valid binary signature made by rPGP in a test, with one extra
+    packet placed before or after it, then checked with
+    `verify_detached`. The experiment test was removed afterwards.
+  - Before the signature: marker (10), padding (21), unknown non-critical
+    (40) and private (60) packets are skipped, and the signature verifies.
+    An unknown critical packet (38) and a literal-data packet (11) make
+    parsing fail.
+  - After the signature: **every** extra packet is ignored, including the
+    unknown critical packet and the literal-data packet.
+    `DetachedSignature::from_bytes` returns the first signature and never
+    reads the rest. GnuPG allows only signature, marker and padding packets
+    in a detached signature. So the strictness gap is in how ULAI uses
+    rPGP's API, not a bug in rPGP. It was not reported upstream; how to
+    handle it is an open decision for the project owner.
+  - Conclusion: rPGP already ignores unknown non-critical packets, as
+    RFC 9580 §4.3 requires. Group 4 of the rPGP issue was dropped for that
+    reason.
+- 2026-10-22 · Arch Linux · **rPGP and unknown critical subpackets**
+  - rPGP 0.21 rejects a critical subpacket of unassigned type (for example
+    40) while hashing, both when signing and when verifying. It accepts
+    critical subpackets in the experimental range (100–110), critical
+    notations and critical regular expressions. ULAI now checks all of
+    these itself, before the cryptography (SPEC §3.2).
+
