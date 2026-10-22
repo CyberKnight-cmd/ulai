@@ -105,6 +105,38 @@ has been tested yet.
 - Verification MUST complete before any other content of the file is trusted or
   displayed, including the manifest and the icon. Content shown from an
   unsigned or invalid file is labelled as not authenticated.
+- **OpenPGP semantics are ULAI's job.** rPGP handles packets and cryptography
+  and leaves these checks to the application. Each has a test with an
+  independently made key:
+  - A signing subkey needs a valid subkey binding signature **and** an
+    embedded primary-key binding signature (back-signature, type 0x19). A
+    signing subkey without one is rejected.
+  - A key or subkey revocation signature present in the key makes the result
+    invalid.
+  - Expiry is judged at the signature's creation time. Expired before
+    signing → invalid. Expired since → valid, with a warning.
+  - Key flags must allow signing.
+  - The algorithm policy above (no SHA-1 or MD5, RSA ≥ 2048 bits) applies to
+    self-signatures and binding signatures too, not only to the file
+    signature.
+  - v5 (LibrePGP) keys and signatures are unsupported.
+
+#### 3.2.1 Detached signatures (legacy AppImages, ADR-016)
+
+- Legacy AppImages without an embedded signature MAY be verified with a
+  detached OpenPGP signature over the whole file's bytes, as produced by
+  `gpg --detach-sign`. The policy above applies unchanged.
+- The signature comes from `--signature <file>`, or from automatic discovery
+  of exactly `<file>.sig` or `<file>.asc` in the same directory. Nothing
+  else.
+- The public key is never fetched from the network (no keyservers, no WKD).
+  M1: `--key <file>`. From M3: also ULAI's per-user keyring of pinned keys.
+- ULAI files always need their embedded signature; a detached signature next
+  to a ULAI file is ignored.
+- Results: valid (exit 0, reported as "detached signature, key supplied by
+  you" with the full fingerprint); invalid (exit 4) when a key is available
+  but verification fails; `signature_unverifiable` (exit 3) when a signature
+  is found but no key is available.
 - Trust is per app id (trust on first use). The first successfully verified key
   is pinned. Later versions MUST be signed by the pinned key; a different key
   blocks the update and shows the old and new fingerprints.
@@ -561,7 +593,8 @@ changes) and `"status"` (a string). The `ulai doctor` schema is in
 | Exit | `status` | Meaning |
 |---|---|---|
 | 0 | `valid` | The signature verifies with the key embedded in the file (§3.2) |
-| 3 | `unsigned` | No signature (empty or missing `.sha256_sig`) |
+| 3 | `unsigned` | No signature (empty or missing `.sha256_sig`, and no detached signature found) |
+| 3 | `signature_unverifiable` | A detached signature was found, but no key is available to check it (ADR-016) |
 | 4 | `invalid` | The signature or digest does not match, or the key is revoked |
 | 5 | `corrupt` or `unsupported` | The ELF or sections are malformed, or the algorithm, key or filesystem is not supported |
 | 1 | — | Internal error |

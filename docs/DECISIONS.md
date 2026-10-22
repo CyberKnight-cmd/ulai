@@ -116,3 +116,35 @@ scope (GTK must link the host's libraries). aarch64 musl builds follow in M6.
 Together these let other projects implement the format. `REUSE.toml` records
 the licence of each path, and `LICENSES/` holds the texts. *Accepted*
 (2026-10-21).
+
+**ADR-016 — Detached signatures for legacy AppImages.** In the M1 spikes, none
+of 10 real AppImages carried an embedded signature. Krita, for example, blanks
+the embedded sections and publishes a separate `.sig` over the whole file
+(RESEARCH.md, S3/S4).
+
+- ULAI files: the embedded signature stays mandatory (SPEC §3.2). A detached
+  signature next to a ULAI file is ignored.
+- Legacy AppImages without an embedded signature may be verified with a
+  detached OpenPGP signature over the whole file's bytes (what
+  `gpg --detach-sign` produces).
+- Where the signature comes from: `--signature <file>`, or automatic discovery
+  of exactly `<file>.sig` or `<file>.asc` in the same directory. Nothing else.
+- The public key is never fetched from the network: no keyservers, no WKD. In
+  M1 it comes from `--key <file>`; from M3, also from ULAI's per-user keyring
+  of pinned keys.
+- Results:
+  - Valid → exit 0, reported as "detached signature, key supplied by you",
+    with the full fingerprint.
+  - Signature found and a key available, but verification fails → invalid
+    (exit 4). A matching-named signature that fails is a real red flag: a
+    tampered file or the wrong version.
+  - Signature found but no key available → exit 3, status
+    `signature_unverifiable`.
+- Signed checksum lists (SHA256SUMS plus a signature) are out of scope. They
+  get their own ADR if real apps need them.
+- Handler UX (M4): say that a signature file was found but ULAI doesn't have
+  this publisher's key, and offer an import action that pins the key to the
+  app id (M3).
+
+*Accepted* (2026-10-22).
+
