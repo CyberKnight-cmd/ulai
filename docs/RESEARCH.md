@@ -318,3 +318,27 @@ Add one entry per experiment, in this format:
       four runtimes put the sections in the same order.
     - Inkscape was left out because no stable direct download URL was
       found.
+- 2026-10-22 · Arch dev host (Ryzen 7 7435HS, kernel 7.2.9) and a disposable
+  Ubuntu 26.04 VM on the Ubuntu machine · M1 follow-ups
+  - **DwarFS cross-check (closes the open S2 item).** Upstream
+    `dwarfsextract` (dwarfs-universal 0.15.8, sha256 `0ed66df8…`) ran in the VM.
+    For mpv 0.41.0 (1,764 files, 260 symlinks) and GIMP 3.2.6 (9,772 files,
+    668 symlinks), the `dwarfs` 0.2.1 crate gives the same counts and a
+    **byte-identical SHA-256 for every file**.
+    - Gotcha: `/tmp` in the 26.04 guest is a small tmpfs, so extract into the
+      guest's home directory.
+  - **ruzstd vs C zstd throughput.** Measured with backhand, reading every
+    file of Krita 6.0.4 (zstd, 1,134 MB decompressed), single-threaded, warm
+    page cache, 3 runs each, LTO release builds:
+    - C libzstd: 1.14–1.17 s, about **980 MB/s**;
+    - ruzstd 0.9.1: 3.53–3.55 s, about **320 MB/s**, i.e. about 3.1× slower.
+    - This affects M3 extraction time (about 3.5 s for Krita on this CPU).
+      Extraction can be parallelised across files, because ULAI's block cap
+      is per thread.
+  - **Real-app signature checks with `ulai verify`.** Krita 6.0.4's official
+    detached `.sig` (binary, RSA-2048, SHA-512) verifies: exit 0, 0.62 s for
+    386 MB in a release build. One flipped byte at offset 200,000,000 gives
+    invalid (exit 4).
+  - **Upstream proposal:** an optional pure-Rust zstd backend for dwarfs-rs,
+    oxalica/dwarfs-rs#3 (opened 2026-10-22; the repository was last pushed
+    2025-06-09).

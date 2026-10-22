@@ -81,6 +81,11 @@ decompression bomb), without executing any of them.
 - [ ] **Prerequisite, a hard requirement before any other M3 work:** full
       in-process DwarFS reading (listing and file contents) for legacy
       AppImages, with the same limits and hostile-file tests as SquashFS.
+      Use the `dwarfs` crate (verified byte-identical to upstream
+      `dwarfsextract`). Its zstd is C; a pure-Rust option was proposed
+      upstream in oxalica/dwarfs-rs#3. If there is no response by the time M3
+      is planned, fork the crate (MIT/Apache) with attribution and keep the
+      patch upstreamable. Do not write our own DwarFS reader.
 
 - [ ] Safe extraction (SPEC §8 rules) into the content-addressed store, with
       hardlinks and garbage collection.
