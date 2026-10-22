@@ -342,3 +342,57 @@ Add one entry per experiment, in this format:
   - **Upstream proposal:** an optional pure-Rust zstd backend for dwarfs-rs,
     oxalica/dwarfs-rs#3 (opened 2026-10-22; the repository was last pushed
     2025-06-09).
+- 2026-10-22 · Arch dev host (kernel 7.2.9) · M1 implementation results
+  - **Real-app run.** verify, inspect and validate ran over all 10 real
+    AppImages: 30 runs, each traced with `strace -f -e
+    trace=execve,execveat`, and **every run showed exactly one exec (ulai
+    itself)**.
+    - Exit codes as designed: verify 3 (no embedded signatures), inspect 0
+      for SquashFS and 5 for DwarFS, validate 4 (no manifest) or 5 (DwarFS).
+    - validate needs 0–4 s per app and parses up to 1,250 bundled ELF files
+      in memory.
+  - **What validate found in real apps** (they are legacy AppImages, so
+    "does not conform" is expected; the findings themselves are the data):
+    - **Leaked build-machine RPATHs:** Kdenlive has 145 files with RPATH
+      `/builds/multimedia/kdenlive/...`, Shotcut 354 with
+      `/root/shotcut/Shotcut/Shotcut.app/lib`, and Krita 3 with
+      `/builds/graphics/krita/_install/...`. A local user who can create
+      those paths can make the loader pick up their libraries.
+    - **Bundled driver-stack libraries:**
+      - Obsidian (Electron) ships ANGLE's `libEGL.so` and `libGLESv2.so`
+        plus the Vulkan loader `libvulkan.so.1`;
+      - Shotcut ships `libvulkan.so.1`;
+      - Audacity ships `libOpenGL.so.0`;
+      - Kdenlive ships fontconfig (a warning).
+    - Under SPEC §11.1, every Electron app packaged this way would fail
+      native-mode validation. This needs a policy decision before M3.
+    - **A classifier bug the run exposed:** Qt's Wayland plugins
+      `libdrm-egl-server.so` and `libvulkan-server.so` were flagged until
+      families were matched exactly (SPEC §11.1).
+    - Highest symbol versions required: GLIBC 2.30–2.35, GLIBCXX
+      3.4.26–3.4.32. Only Krita bundles libstdc++.
+  - **Fuzzing (cargo-fuzz, nightly 1.101):** 1 hour each, the six targets
+    in parallel, seeded from the fixtures. **No crash, hang (10 s timeout)
+    or OOM in any target.** Executions per target:
+    - container 5.6 M, image 9.8 M, signature 5.6 M;
+    - manifest 52.1 M, elf 8.9 M, desktop 23.8 M.
+
+    The roadmap's "several hours each" is still to do.
+  - **Independent OpenPGP vectors:**
+    - RFC 9580 A.3/A.6 (v6 Ed25519, text signature) verifies, and its
+      fingerprint matches the RFC. A.1, a bare v4 key without a
+      self-signature, is rejected.
+    - Sequoia sq 1.3.1 (sequoia-openpgp 2.1.0) made a v6 key with a
+      certification-only primary key and an Ed25519 signing subkey (v6
+      back-signature); it verifies.
+    - GnuPG 2.4.9 cannot even parse v6 packets.
+    - rPGP 0.21 silently skips v5 key packets, so ULAI detects them itself
+      and reports "unsupported".
+  - **ELF32:** an AppImage built with upstream `runtime-i686` and signed by
+    appimagetool has its filesystem magic exactly at the computed ELF end,
+    and verify is valid. This closes SPEC §3.1's ELF32 check.
+  - **Hostile files:** a flipped signature byte gives invalid; symlinks out
+    of the image never read host files; a 20 MB ratio bomb is stopped by
+    the 100× limit. Mutating any protection makes a test fail, except where
+    noted in the tests (the per-block cap is proven by a unit test, because
+    a crafted end-to-end block bomb is caught earlier by backhand).

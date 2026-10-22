@@ -45,11 +45,10 @@ extension: detection is by AppImage magic plus manifest presence.
 ### 3.1 Image offset and sections
 
 The image starts where the ELF ends: `offset = e_shoff + e_shentsize × e_shnum`,
-which is how AppImage tooling computes it. Verified for ELF64 on four runtimes
+which is how AppImage tooling computes it. Verified on four ELF64 runtimes
 (upstream type2-runtime, the older AppImageKit runtime, electron-builder's, and
-uruntime): the filesystem magic sits exactly at that offset in all 14 files
-tested (RESEARCH.md, 2026-10-21/22). **[verify]** ELF32: no ELF32 AppImage
-has been tested yet.
+uruntime) and on upstream's ELF32 `runtime-i686`: the filesystem magic sits
+exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
 
 - Compute the offset with checked arithmetic; overflow, or an offset past the
   end of the file, makes the file corrupt.
@@ -254,7 +253,7 @@ ABI numbers refer to the feature table in §6.2.
 | `x11` | X11 sockets | X11 lets any app read the keystrokes and windows of other X11 apps |
 | `secrets` | Secret Service on the session bus | Can read passwords stored in your keyring |
 | `ssh-keys` | Read `~/.ssh` | Can use your SSH identities |
-| `dotfile:<path>` | One specific hidden path, read-only or read-write | Shown with the exact path |
+| `dotfile:<path>`, `dotfile-rw:<path>` | One specific hidden path, read-only (`dotfile:~/.foorc`) or read-write (`dotfile-rw:~/.foorc`). The path is written `~/.name[/…]` | Shown with the exact path |
 | `camera` | `/dev/video*` | — |
 | `full-home` | Read all of `$HOME`, including hidden files | For backup tools and file managers |
 
@@ -509,6 +508,17 @@ file name):
   §11.2 needs that data.
 - Everything else is bundled, with no message.
 
+Names match by **family**: `libX` covers `libX.so`, `libX.so.N…` and the
+Mesa/NVIDIA naming `libX_variant…` (`libdrm_amdgpu.so.1`, `libEGL_mesa.so.0`),
+but not other names that merely start the same way. So `libGL*` covers
+`libGL.so.1` but not libGLU or libGLEW (ordinary application libraries), and
+`libdrm*`/`libvulkan*` do not cover Qt's `libdrm-egl-server.so` or
+`libvulkan-server.so` plugins. The GPU families are libGL, libEGL, libGLX,
+libGLdispatch, libOpenGL, libGLESv1_CM, libGLESv2, libvulkan, libgbm, libdrm,
+libglapi, libOSMesa, libxatracker and libcuda, plus `*_dri.so`,
+`libgallium-*`, `libnvidia-*` and `nvidia_drv.so`. The name checked is
+`DT_SONAME`, or the file name if there is none.
+
 ### 11.2 Library conflicts
 
 When a bundled library (for example `libstdc++`, `libgcc_s` or `libz`) is older
@@ -600,6 +610,21 @@ changes) and `"status"` (a string). The `ulai doctor` schema is in
 | 1 | — | Internal error |
 | 2 | — | Usage error |
 
-`ulai inspect` and `ulai validate` use exit 5 for a file whose filesystem they
-cannot read. In M1 this includes DwarFS images; verify still works on them.
+`ulai inspect` exit codes:
+
+| Exit | `status` | Meaning |
+|---|---|---|
+| 0 | `ok` | Inspected (the signature result is in the output; `authenticated` is true only if it is valid) |
+| 5 | `corrupt` or `unsupported` | The file or its filesystem cannot be read (in M1, this includes DwarFS) |
+
+`ulai validate` exit codes:
+
+| Exit | `status` | Meaning |
+|---|---|---|
+| 0 | `conforms` | No errors (warnings allowed, e.g. an unsigned development build) |
+| 4 | `does_not_conform` | At least one error |
+| 5 | `corrupt` or `unsupported` | The file or its filesystem cannot be read (in M1, this includes DwarFS) |
+
+Both also use 1 for internal errors and 2 for usage errors. In M1, verify
+works on DwarFS images while inspect and validate report exit 5.
 

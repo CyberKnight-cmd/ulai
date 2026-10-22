@@ -28,14 +28,14 @@ tagged as a release.*
 
 ## M1 — Inspect, validate, verify (~2 weeks)
 
-- [ ] ELF parsing, AppImage magic and image offset (SPEC §3.1). SquashFS listing
+- [x] ELF parsing, AppImage magic and image offset (SPEC §3.1). SquashFS listing
       and reading in-process: no FUSE and no execution. DwarFS images are
       detected; `inspect` and `validate` report them as unsupported (exit 5),
       while `verify` works on them (SPEC §3.2, §16).
-- [ ] Manifest schema, and `ulai inspect` (human-readable and JSON).
-- [ ] Signature verification compatible with upstream AppImage signing, with
+- [x] Manifest schema, and `ulai inspect` (human-readable and JSON).
+- [x] Signature verification compatible with upstream AppImage signing, with
       test vectors from upstream-signed files. Resolves SPEC §14 O9.
-- [ ] `ulai validate` checks:
+- [x] `ulai validate` checks:
   - magic, manifest schema and permission vocabulary;
   - `own_paths` rules (SPEC §4);
   - no excluded libraries in the image, using ULAI's own list (SPEC §11.1);
@@ -45,10 +45,17 @@ tagged as a release.*
   - the entry point exists and is executable;
   - `arch` matches the image.
 - [ ] Fuzz the ELF, SquashFS and manifest parsers (cargo-fuzz), several hours each.
+      *(2026-10-22: six targets exist and CI smoke-tests them; each has run
+      for 1 hour without findings. The multi-hour runs are still to do.)*
 
 **Done when:** inspect, validate and verify work on 10 real AppImages, and on 3
 crafted hostile files (bad signature, path traversal in the image, a
 decompression bomb), without executing any of them.
+
+*Status (2026-10-22): "done when" is met. All three commands ran on the 10
+real AppImages (30 runs) and on the crafted hostile files, each under
+`strace -f -e trace=execve,execveat`, with no exec other than ulai's own.
+Open: the multi-hour fuzzing runs.*
 
 ## M2 — Sandbox (`ulai-run`) and the stealer suite (~3 weeks) — core research milestone
 
