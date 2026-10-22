@@ -11,6 +11,7 @@
 
 pub mod appimage;
 pub mod host;
+pub mod imagefs;
 pub mod signature;
 mod sys;
 

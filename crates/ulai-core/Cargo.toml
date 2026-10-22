@@ -29,6 +29,10 @@ object = { version = "0.40", default-features = false, features = ["read_core", 
 sha2 = "0.11"
 hex = "0.4"
 pgp = "0.21"
+backhand = { version = "0.25.5", default-features = false }
+ruzstd = "0.9"
+flate2 = "1"
 
 [dev-dependencies]
+backhand = { version = "0.25.5", default-features = false, features = ["gzip"] }
 tempfile = "3"
