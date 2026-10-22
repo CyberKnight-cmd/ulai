@@ -396,3 +396,47 @@ Add one entry per experiment, in this format:
     the 100× limit. Mutating any protection makes a test fail, except where
     noted in the tests (the per-block cap is proven by a unit test, because
     a crafted end-to-end block bomb is caught earlier by backhand).
+- 2026-10-22 · Disposable Ubuntu 26.04 VM (6 GB, 4 vCPU) on the Ubuntu
+  machine; VM writes on its HDD after the SSD incident below · OpenPGP
+  interoperability test suite, `verify-only` subset
+  - **Setup:**
+    - suite commit `601692566e9d` (2026-10-09), built with Ubuntu's rustc
+      1.93.1;
+    - backends: `sqop` (sequoia-sop 0.37.3, Sequoia 2.1.0) as the producer
+      and reference, and `tools/ulai-sop` (ULAI's own verifier and policy);
+    - the README's package list lacks `libsqlite3-dev`, which the build
+      needs.
+  - **Results** (117 cases; the suite's score means "met the expectation"):
+
+    | Implementation | Met | Missed | Neutral |
+    |---|---|---|---|
+    | sqop | 100 | 2 | 15 |
+    | ulai-sop | 84 | 16 | 15 |
+
+    Both miss the same 2 "V6 issuer FP" cases. ULAI's 14 own misses:
+    - **Accepts what should be rejected (4), security-relevant:**
+      - signatures whose creation time is in the future (3 cases): ULAI
+        does not compare the signature time with the current time;
+      - a signature with a critical unknown notation (1 case): RFC 9580
+        requires treating it as invalid. rPGP rejects critical unknown
+        subpackets (that case passes) but not critical notations.
+      - sqop rejects all four.
+    - **Rejects what should be accepted, fail-closed (10):**
+      - certificates containing a subkey with an unknown curve or
+        algorithm ("Mock PQ subkey", 6 cases): rPGP 0.21 fails to parse the
+        whole certificate, so a signature by a known key is rejected;
+      - a mock certificate over ULAI's 64 KiB key limit (1 case);
+      - a signature file carrying unknown packets next to the signature
+        ("SIG4_ricarda", 3 cases): rPGP fails with "PacketBodyReader
+        errored".
+  - Raw results (`results.json`, 664 KB) are not committed; rerun with
+    `tools/ulai-sop` and the payload described above.
+- 2026-10-22 · Ubuntu machine (HP SSD S650 240GB, `sdc`) · **hardware
+  incident during the interop build**
+  - At 20:24:24 IST, SATA write commands to the root SSD timed out after
+    42 s (`DID_TIME_OUT`), followed by I/O errors. ext4 aborted its journal
+    and remounted `/` read-only.
+  - After a restart, fsck ran and the system was clean. The rerun put every
+    heavy write on the 1 TB HDD (`TMPDIR=/srv/archive/ulai-tmp`), and no disk
+    error was logged in that boot.
+  - The SSD's health (SMART) has not been checked; that needs root.
