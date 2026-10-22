@@ -13,6 +13,7 @@ pub mod appimage;
 pub mod display;
 pub mod host;
 pub mod imagefs;
+pub mod manifest;
 pub mod signature;
 mod sys;
 pub mod verify;

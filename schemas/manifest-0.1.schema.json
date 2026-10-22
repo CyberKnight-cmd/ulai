@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/CyberKnight-cmd/ulai/schemas/manifest-0.1.schema.json",
+  "title": "ULAI manifest 0.1",
+  "description": "The app manifest at /.ulai/manifest.json in a ULAI file (SPEC §4). Unknown fields are allowed and ignored. ulai validate additionally checks rules JSON Schema cannot express: own_paths must not overlap the protected set (SPEC §6.3), and paths must not contain '.' or '..' components. Licence: MIT (ADR-015).",
+  "type": "object",
+  "required": ["ulai", "id", "name", "version", "summary", "arch", "runtime_mode", "permissions"],
+  "properties": {
+    "ulai": { "const": "0.1" },
+    "id": {
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[A-Za-z_-][A-Za-z0-9_-]*(\\.[A-Za-z_-][A-Za-z0-9_-]*)*\\.[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "name": { "$ref": "#/$defs/text", "maxLength": 100 },
+    "version": { "$ref": "#/$defs/text", "maxLength": 64 },
+    "summary": { "$ref": "#/$defs/text", "maxLength": 200 },
+    "arch": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["x86_64", "aarch64"] }
+    },
+    "runtime_mode": { "enum": ["native", "portable"] },
+    "glibc_floor": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "entry": { "$ref": "#/$defs/imagePath" },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["user-files", "network", "gpu", "audio", "notifications", "system-bus"] }
+    },
+    "sensitive_permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "anyOf": [
+          { "enum": ["x11", "secrets", "ssh-keys", "camera", "full-home"] },
+          { "type": "string", "pattern": "^dotfile(-rw)?:~/\\.[^/]+(/[^/]+)*$" }
+        ]
+      }
+    },
+    "own_paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^~/[^/]+(/[^/]+)*$",
+        "not": { "enum": ["~/.config", "~/.local", "~/.local/share", "~/.local/state", "~/.cache"] }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "properties": {
+        "mime_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$"
+          }
+        },
+        "autostart": { "type": "boolean" },
+        "native_messaging": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["browser", "host_manifest"],
+            "properties": {
+              "browser": { "enum": ["chromium-family", "firefox"] },
+              "host_manifest": { "$ref": "#/$defs/imagePath" }
+            }
+          }
+        }
+      }
+    },
+    "homepage": { "type": "string", "maxLength": 2048, "pattern": "^https://\\S+$" }
+  },
+  "if": { "properties": { "runtime_mode": { "const": "native" } } },
+  "then": { "required": ["glibc_floor"] },
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "not": { "pattern": "[\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200E\\u200F\\u202A-\\u202E\\u2066-\\u2069]" }
+    },
+    "imagePath": { "type": "string", "pattern": "^[^/\\u0000]+(/[^/\\u0000]+)*$" }
+  }
+}
