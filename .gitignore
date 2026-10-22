@@ -9,3 +9,6 @@
 /fuzz/coverage
 /fuzz/logs
 /tools/ulai-sop/target
+
+# Local fuzzing logs
+fuzz/logs*/
