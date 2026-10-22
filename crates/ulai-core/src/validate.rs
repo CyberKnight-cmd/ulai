@@ -97,11 +97,20 @@ fn so_base(name: &str, base: &str) -> bool {
         || (name.starts_with(&format!("{base}-")) && name.contains(".so"))
 }
 
+/// `base.so`, `base.so.N…`, or `base_variant…` (the Mesa/NVIDIA naming,
+/// e.g. `libdrm_amdgpu.so.1`, `libEGL_mesa.so.0`). A hyphen does not
+/// continue the family: `libdrm-egl-server.so` is a Qt plugin.
+fn family(name: &str, base: &str) -> bool {
+    name.strip_prefix(base)
+        .is_some_and(|rest| rest == ".so" || rest.starts_with(".so.") || rest.starts_with('_'))
+}
+
 /// Classifies a library by its soname (or file name), per SPEC §11.1.
 ///
-/// "libGL*" is read as the GL dispatch libraries (libGL, libGLX*, libGLES*,
-/// libGLdispatch): libGLU and libGLEW are ordinary application libraries,
-/// not part of the driver stack, and are not matched.
+/// Families match `base.so*` and `base_*` only. So `libGL*` covers
+/// `libGL.so.1` but not libGLU or libGLEW (ordinary application libraries),
+/// and `libvulkan*` covers the loader and Mesa ICDs (`libvulkan_intel.so`)
+/// but not Qt's `libvulkan-server.so`.
 pub fn classify(name: &str) -> Option<LibClass> {
     const GLIBC: &[&str] = &[
         "libc",
@@ -116,29 +125,28 @@ pub fn classify(name: &str) -> Option<LibClass> {
     if GLIBC.iter().any(|b| so_base(name, b)) || name.starts_with("ld-linux") {
         return Some(LibClass::Glibc);
     }
-    const GPU_PREFIX: &[&str] = &[
+    const GPU: &[&str] = &[
+        "libGL",
         "libEGL",
         "libGLX",
         "libGLdispatch",
         "libOpenGL",
+        "libGLESv1_CM",
+        "libGLESv2",
         "libvulkan",
         "libgbm",
         "libdrm",
-        "libGLES",
-        "libgallium",
         "libglapi",
-        "libnvidia-",
-        "libcuda.so",
         "libOSMesa",
         "libxatracker",
+        "libcuda",
     ];
-    let gl =
-        name.starts_with("libGL") && !name.starts_with("libGLU") && !name.starts_with("libGLEW");
-    if gl
-        || GPU_PREFIX.iter().any(|p| name.starts_with(p))
-        || name.ends_with("_dri.so")
-        || name == "nvidia_drv.so"
-    {
+    // Driver files that use a hyphen or a suffix rather than a family name.
+    let driver_file = name.ends_with("_dri.so")
+        || name.starts_with("libgallium-")
+        || name.starts_with("libnvidia-")
+        || name == "nvidia_drv.so";
+    if driver_file || GPU.iter().any(|b| family(name, b)) {
         return Some(LibClass::Gpu);
     }
     if so_base(name, "libstdc++")
@@ -410,8 +418,17 @@ fn check_elf_files(
     let mut max_cxx: Option<Vec<u32>> = None;
     let mut max_abi: Option<Vec<u32>> = None;
     for (path, size) in files {
-        let Ok(head) = fs.read_head(&path, 4) else {
-            continue;
+        let head = match fs.read_head(&path, 4) {
+            Ok(h) => h,
+            Err(e) => {
+                out.add(
+                    Severity::Error,
+                    "image",
+                    Some(&path),
+                    format!("cannot read: {e}"),
+                );
+                continue;
+            }
         };
         if !elfinfo::is_elf(&head) {
             continue;
