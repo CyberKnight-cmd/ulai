@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 The ULAI contributors
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Minimal SOP (Stateless OpenPGP CLI) front end for ULAI's verifier, used
+# only to run the OpenPGP interoperability test suite. Not shipped, not
+# part of the workspace.
+[package]
+name = "ulai-sop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[dependencies]
+ulai-core = { path = "../../crates/ulai-core" }
+pgp = "0.21"
+
+[workspace]
+
+[profile.release]
+lto = true
+strip = true

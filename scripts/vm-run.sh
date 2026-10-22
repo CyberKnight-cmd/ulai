@@ -11,7 +11,8 @@
 #   distro: debian-13 | fedora-44 | ubuntu-26.04
 #
 # Set ULAI_VM_PACKAGES (space-separated) to have cloud-init install
-# distribution packages at boot, before the payload runs.
+# distribution packages at boot, before the payload runs. ULAI_VM_MEM
+# (MiB, default 2048) and ULAI_VM_CPUS (default 2) size the guest.
 #
 # <payload-dir> is copied to /tmp/payload in the guest, and `run.sh` inside it
 # runs there as the guest user `ulai` (uid 1000, no sudo) with network access
@@ -114,7 +115,7 @@ qemu-img create -q -f qcow2 -F qcow2 -b "$cache/$file" "$work/disk.qcow2" 12G
 
 port=$((20000 + RANDOM % 20000))
 qemu-system-x86_64 \
-	-enable-kvm -cpu host -smp 2 -m 2048 \
+	-enable-kvm -cpu host -smp "${ULAI_VM_CPUS:-2}" -m "${ULAI_VM_MEM:-2048}" \
 	-drive file="$work/disk.qcow2",if=virtio,format=qcow2 \
 	-drive file="$work/seed.iso",if=virtio,format=raw,readonly=on \
 	-netdev user,id=n0,hostfwd=tcp:127.0.0.1:"$port"-:22 \

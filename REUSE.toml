@@ -13,6 +13,7 @@ path = [
   "docs/**",
   "Cargo.lock",
   "fuzz/Cargo.lock",
+  "tools/ulai-sop/Cargo.lock",
   "crates/ulai-core/tests/snapshots/**",
 ]
 precedence = "aggregate"
