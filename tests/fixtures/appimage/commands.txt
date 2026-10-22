@@ -1,0 +1,5 @@
++ ./appimagetool --runtime-file runtime-x86_64 --sign --sign-key 274B98827C6B507E7DE3F1703C63EF189CEBAA76 UlaiDir /tmp/out/upstream-rsa3072.AppImage
++ ./appimagetool --runtime-file runtime-x86_64 --sign --sign-key BBFE415C9B50B9430589F2D0F2E75C54A2005C93 UlaiDir /tmp/out/upstream-ed25519.AppImage
++ ./appimagetool --runtime-file runtime-x86_64 LegacyDir /tmp/out/legacy-unsigned.AppImage
++ gpg --batch --detach-sign -u 274B98827C6B507E7DE3F1703C63EF189CEBAA76 --digest-algo SHA512 -o /tmp/out/legacy-unsigned.AppImage.sig /tmp/out/legacy-unsigned.AppImage
++ (in a git repository with pubkey.asc and privkey.asc at its root) VERSION=1.0 ./go-appimagetool UlaiDir

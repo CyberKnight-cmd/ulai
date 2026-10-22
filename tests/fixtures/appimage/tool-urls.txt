@@ -1,0 +1,3 @@
+appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+go-appimagetool https://github.com/probonopd/go-appimage/releases/download/continuous/appimagetool-951-x86_64.AppImage
+runtime-x86_64 https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64

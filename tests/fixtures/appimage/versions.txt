@@ -1,0 +1,4 @@
+appimagetool: appimagetool, continuous build (git version 854e19e), build 313 built on 2026-10-04 14:58:08 UTC
+go-appimagetool: appimagetool version 305
+gpg: gpg (GnuPG) 2.4.8
+os: "Ubuntu 26.04.1 LTS" 7.0.0-38-generic

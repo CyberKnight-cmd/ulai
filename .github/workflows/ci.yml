@@ -44,6 +44,8 @@ jobs:
             echo "::error::unsafe code outside crates/ulai-core/src/sys.rs"
             exit 1
           fi
+      - name: Install strace (the no-execution test traces execve/execveat)
+        run: sudo apt-get install -y --no-install-recommends strace
       - name: Test
         # Landlock-dependent tests are #[ignore]d; run them locally with
         # `cargo test -- --ignored` on a kernel with Landlock enabled.
