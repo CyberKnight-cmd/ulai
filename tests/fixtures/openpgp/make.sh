@@ -102,6 +102,12 @@ printf 'change-usage\nS\nQ\nsave\n' | at $((T0+2*DAY)) --expert --command-fd 0 -
 key "$N" > no-sign-flag.key.asc
 case_ no-sign-flag invalid "not allowed to sign"
 
+# --- hostile user id (terminal spoofing, SPEC §3.5): RLO and LRI ---
+at $T0 --quick-gen-key $'Publisher \u202eFE3C 2B1A\u2066 <bidi@fixtures.ulai.invalid>' ed25519 sign never
+BI=$(fpr bidi@fixtures.ulai.invalid)
+key "$BI" > bidi-uid.key.asc; sig $((T0+DAY)) "$BI" --digest-algo SHA256 > bidi-uid.sig.asc
+case_ bidi-uid valid "user id with bidi controls; must be escaped when shown"
+
 # --- structure ---
 key "$R" "$E" > two-keys.key.asc; cp rsa3072-binary-sha256.sig.asc two-keys.sig.asc
 case_ two-keys corrupt "exactly one primary key"

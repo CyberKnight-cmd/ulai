@@ -9,13 +9,17 @@
 
 #![deny(unsafe_code)]
 
+pub mod appdir;
 pub mod appimage;
 pub mod display;
+pub mod elfinfo;
 pub mod host;
 pub mod imagefs;
+pub mod inspect;
 pub mod manifest;
 pub mod signature;
 mod sys;
+pub mod validate;
 pub mod verify;
 
 /// Landlock uapi items missing from `libc` and the `landlock` crate.

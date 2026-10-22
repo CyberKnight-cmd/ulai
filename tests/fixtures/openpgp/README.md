@@ -38,6 +38,7 @@ leave a temporary GnuPG home that `make.sh` deletes on exit.
 | `expired-before-signing` | invalid | had expired when the signature was made |
 | `expired-since` | valid+warning | expired since |
 | `no-sign-flag` | invalid | not allowed to sign |
+| `bidi-uid` | valid | user id with bidi controls; must be escaped when shown |
 | `two-keys` | corrupt | exactly one primary key |
 | `wrong-key` | invalid | not in the supplied key |
 
@@ -47,36 +48,40 @@ and v6 / RFC 9580 keys. Both need another independent source.
 ## SHA-256 of each file
 
 ```
-286b3aedf746b486acc271a5b46d93e3dd1b1e30096e44ecd967a4cd650516da  cases.tsv
-f1fc103d73562fd9cff5f013efbd94de9475d378adca46d11b3c4138bdeeb2ae  ed25519-text-sha512.key.asc
-1aefcb60f041f511b162b0d7663ce00a44f97365333d6f3b4d1942bcc2f96487  ed25519-text-sha512.sig.asc
-079a6cc81ddd5934849b4f127a163f77bb2ca7280800a78bb8c94df04385a416  expired-before-signing.key.asc
-c50c23515e83334c42e5e9cdd88e8374b243c65fc18a6491a46d399eb7ca0e3d  expired-before-signing.sig.asc
-c0e59eba3e9ddc063f89d3c7fedfa2d554d87febf73263a73e8cc22510de6fde  expired-since.key.asc
-64f06a044c9abb6c9fbb4eb2708089964a8a7147f4978c82d8d97368b9998a2f  expired-since.sig.asc
+ef46654359be26a7e4ed2d9031e11751f53cc72b82356f6b436dbc76527f1240  bidi-uid.key.asc
+1d0e6f590ecd8808e6bcd84c6ad2c920618f0282b518f194e7f5ab3268e600d4  bidi-uid.sig.asc
+4f2409e51b510d380746990f064493e93ef31fab08ec285a639bfafb46664cc2  cases.tsv
+f60a3a690e589457e7853be6a65085d7f81de74f3ff100e27c29dace2c2e954e  ed25519-text-sha512.key.asc
+fc10fc62c81766ad0a9b89f0603b64d020204f811d0baf8d0c3197ec0c1c5d64  ed25519-text-sha512.sig.asc
+71ec73181b5ffd601501a9a44f673f9d95bda938e07957098adcf300326c9a6e  expired-before-signing.key.asc
+0bfd4e3a9885f09caca14e346f153da7d14444759fa5b9547e78c37d27a271b9  expired-before-signing.sig.asc
+9155e8c54166dd66ad89dd5e3187e18690814e07153b9bce558720ccffddf569  expired-since.key.asc
+cdc519e27f8f0e4d2e73c0a381f9882f54d9a13fc25f963e92ffb1471d4a23bd  expired-since.sig.asc
 5931520ad13c019180d8bebdeccc0f402f3725fbe52b686fbb727aeaa23e6da0  msg
-c1e764fa846a4134188f31c6cf3084cf59186e5c5d55d62dbaa215c4f9401a24  no-sign-flag.key.asc
-5eae1b3eb9b356876fa05c939d8e41e60cadf8b0edc2ae7f6e067926cd4dffb5  no-sign-flag.sig.asc
-69ce2aa13229a4e45cf808356e0496e86ab8b9a4ee5e24fa4bf3f519ddf43931  primary-revoked.key.asc
-77b4c4a5ff120729b95f811674cc7506169542bb1625e3b1499d540aaa923799  primary-revoked.sig.asc
-fc322a5c0b2dabe58803645bbf02b7e17302208df70c8ab6c48465cbccd360f9  rsa1024.key.asc
-aaa95089530204115bf207f68feb14f3d15c7c8ab760df5af2e93484730de9b9  rsa1024.sig.asc
-6e287ae72550fc6a60f694b52406b456797562c5d66fd86ed784268750ac4dca  rsa3072-binary-sha256.key.asc
-a66d654bc4925e14f2bc9882cc6a347a68d9a1cd1468f3b0e945ba6272260cc1  rsa3072-binary-sha256.sig.asc
-6e287ae72550fc6a60f694b52406b456797562c5d66fd86ed784268750ac4dca  rsa3072-text-sha512.key.asc
-a35c8bc6b582fd2d466bd64e19b622b57d2272be5e1d8153b510805c46794040  rsa3072-text-sha512.sig.asc
-6e287ae72550fc6a60f694b52406b456797562c5d66fd86ed784268750ac4dca  sha1-data.key.asc
-54b763f0aa031748fb3e8906c810d8bf63e69af1e8f72961f57617ac186d3c42  sha1-data.sig.asc
-e2c48322cd7acfdfa8df875fce9aa474dc3dd302e9cf62ce34374f31f3ccc4c5  sha1-selfsig.key.asc
-d88e792c42715dcb726ecd6d3989b85aed1af1e8946013a879b6b229fd724caa  sha1-selfsig.sig.asc
-d5007e60b9fe932620c87e10f98f46ae39200a283e935aa3a1c9c67a64ffcaa3  subkey-no-backsig.key.asc
-a8bb78eb0fae845d1e83783e7466c1623edf6d7a52b09123658e5b48b61bb97e  subkey-no-backsig.sig.asc
-8e30cfda949a294062c5fdd519908632da1230ff49b3b1c4c51a6f722f418b9d  subkey-revoked.key.asc
-6decfdcd92def56e9629d7e2a644fb0645857d38dde31d935179abb50a92fcd1  subkey-revoked.sig.asc
-c20847217cc715c39eae8cd2cb3deefd9614672e4617da7a9d5e999d839341e7  subkey-signs.key.asc
-a8bb78eb0fae845d1e83783e7466c1623edf6d7a52b09123658e5b48b61bb97e  subkey-signs.sig.asc
-a60aedf8fe7f0026a08874f53ae65c81798a6e564496b7aed7c6b31e6e71dd23  two-keys.key.asc
-a66d654bc4925e14f2bc9882cc6a347a68d9a1cd1468f3b0e945ba6272260cc1  two-keys.sig.asc
-f1fc103d73562fd9cff5f013efbd94de9475d378adca46d11b3c4138bdeeb2ae  wrong-key.key.asc
-a66d654bc4925e14f2bc9882cc6a347a68d9a1cd1468f3b0e945ba6272260cc1  wrong-key.sig.asc
+a37871e15155489d8838b8c741e2030e36dcba8635143a202133144948b96af6  no-sign-flag.key.asc
+584993ecf2d4c07fc4b340e6d653f4856a533ffa40bae7496da138e2f54b6591  no-sign-flag.sig.asc
+35ebb97bce4478aaeddf59c8f35de4a136836760bd2c86dc7fa6ef87fecedb35  primary-revoked.key.asc
+a2a25b63d301b54ec98212c5a2a5b5d9a2c7e3cdb9d453c0065b67ca80b8c4aa  primary-revoked.sig.asc
+94fe8cedba419cd9e4b645923eb46a0c017b86e05d15a5a0bd13893fb4697d6a  rsa1024.key.asc
+a235ef4e662d46affbc5ab33e9b4a4140c5c6995867ad64f047f46646ca5374c  rsa1024.sig.asc
+bc7393e1aa1814447f4f8d520a2973046247288248f55be75bebbe6ac627cdad  rsa3072-binary-sha256.key.asc
+f28dbad0da19c831c721788a17fd1065a6926166d7b6d60a88ecbe975ea477de  rsa3072-binary-sha256.key.gpg
+68f56da5f5037c00ea1d34b0f3d002c4e9c34d1f99bd88bc1c73cc9458b708f4  rsa3072-binary-sha256.sig.asc
+cc6e099c2121b87a9e088e0732885eea098ac798b2ebc95689aaf1d6df4e59c1  rsa3072-binary-sha256.sig.gpg
+bc7393e1aa1814447f4f8d520a2973046247288248f55be75bebbe6ac627cdad  rsa3072-text-sha512.key.asc
+8b4aff593edb81340d4a490960a781edb2df9ea7436ed26589a6b7048ca4b851  rsa3072-text-sha512.sig.asc
+bc7393e1aa1814447f4f8d520a2973046247288248f55be75bebbe6ac627cdad  sha1-data.key.asc
+0b1d57157580d552a72104c9e0fb80cc6040d21eca97beb942f658d44fedc969  sha1-data.sig.asc
+2285f3bea1180c7acabadb2eea86d5b4d90d919b618af6619fbb3a2430f6a2b6  sha1-selfsig.key.asc
+d920e624118c7f2413cb09953261a8ebab061a09e3bc5aad1b912dea3eecd4d9  sha1-selfsig.sig.asc
+61495d44994accbfccfbc3acea540eeae573c2ba9636376703ab1d4ba65f3dd2  subkey-no-backsig.key.asc
+c6da4f74de4b8eb15456c2b15270ce73284cdae48a1c7a4d39be73a1d0f5defc  subkey-no-backsig.sig.asc
+23de208263a3cb4f5910bed869a5021d7843aebfb5bfc541b191adb5434e8e21  subkey-revoked.key.asc
+3e575ae51e5460de4e3c17f31bfe8d0e05233c3fc6968baf2c64eaff673acbf4  subkey-revoked.sig.asc
+4a7ee2488bcfa7478e1df52dc32a7cec8aa59d6661e5216213a9c0c7683b9128  subkey-signs.key.asc
+c6da4f74de4b8eb15456c2b15270ce73284cdae48a1c7a4d39be73a1d0f5defc  subkey-signs.sig.asc
+e41d13859abc98944b833396a3b7338e61001711e931d41c18f00016354a1359  two-keys.key.asc
+68f56da5f5037c00ea1d34b0f3d002c4e9c34d1f99bd88bc1c73cc9458b708f4  two-keys.sig.asc
+f60a3a690e589457e7853be6a65085d7f81de74f3ff100e27c29dace2c2e954e  wrong-key.key.asc
+68f56da5f5037c00ea1d34b0f3d002c4e9c34d1f99bd88bc1c73cc9458b708f4  wrong-key.sig.asc
 ```

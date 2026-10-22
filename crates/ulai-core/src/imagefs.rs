@@ -19,7 +19,10 @@ use std::io::{BufReader, Read};
 
 use backhand::compression::{CompressionAction, Compressor};
 use backhand::kind::Kind;
-use backhand::{BackhandError, FilesystemCompressor, FilesystemReader, InnerNode, SuperBlock};
+use backhand::{
+    BackhandError, FilesystemCompressor, FilesystemReader, InnerNode, SquashfsFileReader,
+    SuperBlock,
+};
 use serde::Serialize;
 
 use crate::appimage::{Container, FsKind};
@@ -176,6 +179,8 @@ pub struct Entry {
 pub struct ImageFs {
     reader: FilesystemReader<'static>,
     entries: BTreeMap<String, Entry>,
+    /// Data readers of regular files, by path (built once at open).
+    files: BTreeMap<String, SquashfsFileReader>,
     block_size: usize,
     image_bytes: u64,
     limits: Limits,
@@ -225,13 +230,17 @@ impl ImageFs {
         }
 
         let mut entries = BTreeMap::new();
+        let mut files = BTreeMap::new();
         for node in reader.files() {
             let path = validate_path(&node.fullpath, limits.max_path_bytes)?;
             let Some(path) = path else { continue }; // the root
             let kind = match &node.inner {
-                InnerNode::File(f) => EntryKind::File {
-                    size: f.file_len() as u64,
-                },
+                InnerNode::File(f) => {
+                    files.insert(path.clone(), f.clone());
+                    EntryKind::File {
+                        size: f.file_len() as u64,
+                    }
+                }
                 InnerNode::Dir(_) => EntryKind::Dir,
                 InnerNode::Symlink(s) => EntryKind::Symlink {
                     target: s
@@ -263,6 +272,7 @@ impl ImageFs {
         Ok(Self {
             reader,
             entries,
+            files,
             block_size,
             image_bytes,
             limits,
@@ -288,6 +298,26 @@ impl ImageFs {
         resolve_in(&self.entries, self.limits.max_symlink_hops, path)
     }
 
+    /// The first `n` bytes of a regular file (fewer if it is shorter), e.g.
+    /// to check for a magic number. Decompresses only the blocks needed.
+    pub fn read_head(&self, path: &str, n: usize) -> Result<Vec<u8>, FsError> {
+        let real = self.resolve(path)?;
+        let f = self
+            .files
+            .get(&real)
+            .ok_or_else(|| corrupt(format!("{real} is not a regular file")))?;
+        let mut buf = Vec::with_capacity(n);
+        with_block_cap(self.block_size, || {
+            self.reader
+                .file(f)
+                .reader()
+                .take(n as u64)
+                .read_to_end(&mut buf)
+        })
+        .map_err(|e| corrupt(format!("{real}: {e}")))?;
+        Ok(buf)
+    }
+
     /// Reads a regular file (after resolving symlinks), at most `max` bytes.
     pub fn read(&self, path: &str, max: u64) -> Result<Vec<u8>, FsError> {
         let real = self.resolve(path)?;
@@ -308,20 +338,10 @@ impl ImageFs {
                 "total decompressed size exceeds the image limits".into(),
             ));
         }
-        let node = self
-            .reader
-            .files()
-            .find(|n| {
-                validate_path(&n.fullpath, usize::MAX)
-                    .ok()
-                    .flatten()
-                    .as_deref()
-                    == Some(real.as_str())
-            })
+        let f = self
+            .files
+            .get(&real)
             .ok_or_else(|| FsError::NotFound(real.clone()))?;
-        let InnerNode::File(f) = &node.inner else {
-            return Err(corrupt(format!("{real} is not a regular file")));
-        };
         let mut buf = Vec::new();
         with_block_cap(self.block_size, || {
             self.reader

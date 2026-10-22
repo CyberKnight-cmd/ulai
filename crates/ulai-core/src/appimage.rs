@@ -117,6 +117,8 @@ pub struct Container {
     file: File,
     len: u64,
     pub class: ElfClass,
+    /// `e_machine` of the runtime (62 = x86_64, 183 = aarch64).
+    pub machine: u16,
     /// Where the filesystem image starts: the end of the ELF, i.e.
     /// `e_shoff + e_shentsize × e_shnum`.
     pub fs_offset: u64,
@@ -165,14 +167,34 @@ impl Container {
             )));
         };
 
+        // e_machine sits at offset 18 in both ELF classes; the header has
+        // already been parsed, so its endianness byte is valid.
+        let mut m = [0u8; 2];
+        read_exact_at(&file, &mut m, 18, len)?;
+        let machine = if ident[5] == 2 {
+            u16::from_be_bytes(m)
+        } else {
+            u16::from_le_bytes(m)
+        };
+
         Ok(Self {
             file,
             len,
             class,
+            machine,
             fs_offset,
             fs_kind,
             sections,
         })
+    }
+
+    /// `x86_64`, `aarch64`, or `e_machine N`.
+    pub fn machine_name(&self) -> String {
+        match self.machine {
+            62 => "x86_64".into(),
+            183 => "aarch64".into(),
+            m => format!("e_machine {m}"),
+        }
     }
 
     pub fn len(&self) -> u64 {

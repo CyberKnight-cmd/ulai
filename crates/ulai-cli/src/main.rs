@@ -15,6 +15,7 @@ use clap::{Parser, Subcommand};
 use ulai_core::doctor;
 use ulai_core::host::{SystemHost, USERNS_PROBE_SUBCOMMAND};
 
+mod inspect_cmd;
 mod verify_cmd;
 
 #[derive(Parser)]
@@ -56,6 +57,30 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Show what is in an AppImage (manifest, desktop entry, icon), without
+    /// executing it. The signature is checked first.
+    ///
+    /// Exit codes: 0 inspected, 5 corrupt or unsupported, 1 internal error.
+    Inspect {
+        file: PathBuf,
+        /// Detached signature file (legacy AppImages only).
+        #[arg(long, value_name = "FILE")]
+        signature: Option<PathBuf>,
+        /// Public key to verify with.
+        #[arg(long, value_name = "FILE")]
+        key: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Check that a file conforms to the ULAI format (SPEC §3, §4, §11.1).
+    ///
+    /// Exit codes: 0 conforms (warnings allowed), 4 does not conform,
+    /// 5 corrupt or unsupported, 1 internal error.
+    Validate {
+        file: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Internal: user-namespace probe child run by `doctor`.
     #[command(name = USERNS_PROBE_SUBCOMMAND, hide = true)]
     UsernsProbe { dir: PathBuf },
@@ -72,6 +97,19 @@ fn main() -> Result<ExitCode> {
         Command::Doctor { json } => {
             init_logging(cli.verbose);
             run_doctor(json)
+        }
+        Command::Inspect {
+            file,
+            signature,
+            key,
+            json,
+        } => {
+            init_logging(cli.verbose);
+            inspect_cmd::inspect(&file, signature, key, json)
+        }
+        Command::Validate { file, json } => {
+            init_logging(cli.verbose);
+            inspect_cmd::validate(&file, json)
         }
         Command::Verify {
             file,

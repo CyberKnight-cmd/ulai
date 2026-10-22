@@ -150,6 +150,45 @@ mod tests {
         assert_eq!(utc(951_782_400), "2000-02-29 00:00:00 UTC");
     }
 
+    /// A GnuPG-made key whose user id carries RLO and LRI
+    /// (tests/fixtures/openpgp, case bidi-uid).
+    #[test]
+    fn hostile_user_id_cannot_reorder_the_output() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/openpgp");
+        let read = |n: &str| std::fs::read(dir.join(n)).unwrap();
+        let accepted = ulai_core::signature::verify_detached(
+            &read("bidi-uid.key.asc"),
+            &read("bidi-uid.sig.asc"),
+            read("msg").as_slice(),
+            std::time::SystemTime::now(),
+        )
+        .unwrap();
+        assert!(
+            accepted.signer.user_ids[0].contains('\u{202E}'),
+            "fixture has the RLO"
+        );
+        let report = Report {
+            schema: 1,
+            status: Status::Valid,
+            file: "app.AppImage".into(),
+            method: Some(Method::Detached),
+            key_source: Some(KeySource::Supplied),
+            signature_file: Some("app.AppImage.sig".into()),
+            fs: None,
+            ulai_file: Some(false),
+            signer: Some(accepted.signer.clone()),
+            warnings: vec![],
+            reason: None,
+        };
+        let text = human(&report);
+        for line in text.lines() {
+            assert!(!line.chars().any(ulai_core::display::is_unsafe), "{line:?}");
+        }
+        assert!(text.contains("\\u{202E}FE3C 2B1A\\u{2066}"), "{text}");
+        assert!(text.contains(&grouped(&accepted.signer.primary_fingerprint)));
+    }
+
     #[test]
     fn fingerprints_are_grouped_in_full() {
         assert_eq!(

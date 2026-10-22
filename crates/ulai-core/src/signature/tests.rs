@@ -58,7 +58,7 @@ fn every_gnupg_case_has_the_expected_outcome() {
         }
         n += 1;
     }
-    assert_eq!(n, 15, "all cases ran");
+    assert_eq!(n, 16, "all cases ran");
 }
 
 #[test]

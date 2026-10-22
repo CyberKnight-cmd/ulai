@@ -22,6 +22,7 @@ fn valid_elf64_squashfs() {
     let (bytes, layout) = Builder::default().build_with_layout();
     let c = open(&bytes).unwrap();
     assert_eq!(c.class, ElfClass::Elf64);
+    assert_eq!(c.machine_name(), "x86_64");
     assert_eq!(c.fs_kind, FsKind::Squashfs);
     assert_eq!(c.fs_offset, layout.fs_offset);
     let (off, size) = layout.sections[".sha256_sig"];
