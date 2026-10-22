@@ -9,6 +9,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod appimage;
 pub mod host;
 mod sys;
 
@@ -18,3 +19,5 @@ pub use sys::uapi as landlock_uapi;
 pub mod doctor;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing_appimage;
