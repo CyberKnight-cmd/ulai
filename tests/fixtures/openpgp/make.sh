@@ -9,7 +9,7 @@
 # Writes <case>.key.asc, <case>.sig.asc and cases.tsv next to this script.
 set -euo pipefail
 cd "$(dirname "$0")"
-rm -f ./*.key.asc ./*.sig.asc cases.tsv
+rm -f ./*.key.asc ./*.sig.asc ./*.gpg cases.tsv
 GNUPGHOME=$(mktemp -d); export GNUPGHOME; chmod 700 "$GNUPGHOME"
 trap 'rm -rf "$GNUPGHOME"' EXIT
 T0=1577836800   # 2020-01-01T00:00:00Z: fixed clock for the time-based cases
@@ -107,6 +107,11 @@ key "$R" "$E" > two-keys.key.asc; cp rsa3072-binary-sha256.sig.asc two-keys.sig.
 case_ two-keys corrupt "exactly one primary key"
 key "$E" > wrong-key.key.asc; cp rsa3072-binary-sha256.sig.asc wrong-key.sig.asc
 case_ wrong-key invalid "not in the supplied key"
+
+# Binary (non-armored) encodings, as `gpg --detach-sign` and `gpg --export`
+# write by default (Krita's .sig is binary).
+gpg --dearmor < rsa3072-binary-sha256.key.asc > rsa3072-binary-sha256.key.gpg
+gpg --dearmor < rsa3072-binary-sha256.sig.asc > rsa3072-binary-sha256.sig.gpg
 
 gpg --version | head -1 > gnupg-version.txt
 rm -f primary-cannot-sign.key.asc

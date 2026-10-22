@@ -177,7 +177,10 @@ pub fn verify_detached(
         None => sig.verify(primary, data),
         Some(sub) => sig.verify(&sub.key, data),
     };
-    verified.map_err(|e| invalid(format!("signature does not match: {e}")))?;
+    verified.map_err(|e| {
+        tracing::debug!(error = %e, "data signature verification failed");
+        invalid("the signature does not match the signed data")
+    })?;
 
     if let Some(exp) = sig.signature_expiration_time() {
         let sig_expires = created.saturating_add(u64::from(exp.as_secs()));
@@ -213,14 +216,48 @@ pub fn verify_detached(
     })
 }
 
-/// Parses exactly one transferable public key.
-fn parse_key(armored: &[u8]) -> Result<SignedPublicKey, Rejection> {
-    let text = armor_text(armored, "key")?;
-    let (iter, _) = SignedPublicKey::from_string_many(text)
-        .map_err(|e| corrupt(format!("cannot parse the public key: {e}")))?;
+/// Whether `bytes` (after trimming NUL padding) is ASCII armor rather than
+/// binary OpenPGP. `gpg --detach-sign` and `gpg --export` write binary by
+/// default; `--armor` and the AppImage sections use armor.
+fn is_armor(bytes: &[u8]) -> bool {
+    let start = bytes
+        .iter()
+        .position(|b| !b.is_ascii_whitespace())
+        .unwrap_or(0);
+    bytes[start..].starts_with(b"-----BEGIN PGP ")
+}
+
+/// Strips NUL padding (embedded sections are padded to their full size) and
+/// applies the size limit.
+fn trimmed<'a>(bytes: &'a [u8], what: &str) -> Result<&'a [u8], Rejection> {
+    let end = bytes.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    let bytes = &bytes[..end];
+    if bytes.len() > MAX_ARMOR_BYTES {
+        return Err(corrupt(format!(
+            "{what} is larger than {MAX_ARMOR_BYTES} bytes"
+        )));
+    }
+    if bytes.is_empty() {
+        return Err(corrupt(format!("{what} is empty")));
+    }
+    Ok(bytes)
+}
+
+/// Parses exactly one transferable public key (armored or binary).
+fn parse_key(input: &[u8]) -> Result<SignedPublicKey, Rejection> {
+    let bytes = trimmed(input, "key")?;
+    let err = |e: pgp::errors::Error| corrupt(format!("cannot parse the public key: {e}"));
     let mut keys = Vec::new();
-    for k in iter {
-        keys.push(k.map_err(|e| corrupt(format!("cannot parse the public key: {e}")))?);
+    if is_armor(bytes) {
+        let (iter, _) =
+            SignedPublicKey::from_string_many(armor_text(bytes, "key")?).map_err(err)?;
+        for k in iter {
+            keys.push(k.map_err(err)?);
+        }
+    } else {
+        for k in SignedPublicKey::from_bytes_many(bytes).map_err(err)? {
+            keys.push(k.map_err(err)?);
+        }
     }
     match keys.len() {
         1 => Ok(keys.pop().expect("one key")),
@@ -231,23 +268,22 @@ fn parse_key(armored: &[u8]) -> Result<SignedPublicKey, Rejection> {
     }
 }
 
-/// Parses exactly one detached signature packet.
-fn parse_signature(armored: &[u8]) -> Result<Signature, Rejection> {
-    let text = armor_text(armored, "signature")?;
-    let (sig, _) = DetachedSignature::from_string(text)
-        .map_err(|e| corrupt(format!("cannot parse the signature: {e}")))?;
+/// Parses exactly one detached signature packet (armored or binary).
+fn parse_signature(input: &[u8]) -> Result<Signature, Rejection> {
+    let bytes = trimmed(input, "signature")?;
+    let err = |e: pgp::errors::Error| corrupt(format!("cannot parse the signature: {e}"));
+    let sig = if is_armor(bytes) {
+        DetachedSignature::from_string(armor_text(bytes, "signature")?)
+            .map_err(err)?
+            .0
+    } else {
+        DetachedSignature::from_bytes(bytes).map_err(err)?
+    };
     Ok(sig.signature)
 }
 
-/// Section contents are NUL-padded; the armor itself must be ASCII.
+/// The armor must be ASCII text without NUL bytes inside it.
 fn armor_text<'a>(bytes: &'a [u8], what: &str) -> Result<&'a str, Rejection> {
-    let end = bytes.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
-    let bytes = &bytes[..end];
-    if bytes.len() > MAX_ARMOR_BYTES {
-        return Err(corrupt(format!(
-            "{what} is larger than {MAX_ARMOR_BYTES} bytes"
-        )));
-    }
     if bytes.contains(&0) {
         return Err(corrupt(format!(
             "{what} contains NUL bytes inside the armor"

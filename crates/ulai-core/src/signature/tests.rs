@@ -105,7 +105,12 @@ fn tampered_data_is_invalid() {
         msg.as_slice(),
         now(),
     );
-    assert!(matches!(r, Err(Rejection::Invalid(_))), "{r:?}");
+    assert_eq!(
+        r,
+        Err(Rejection::Invalid(
+            "the signature does not match the signed data".into()
+        ))
+    );
 }
 
 #[test]
@@ -164,4 +169,26 @@ fn truncated_signature_is_corrupt() {
         now(),
     );
     assert!(matches!(r, Err(Rejection::Corrupt(_))), "{r:?}");
+}
+
+#[test]
+fn binary_key_and_signature_are_accepted() {
+    let msg = read("msg");
+    for (k, s) in [
+        (
+            "rsa3072-binary-sha256.key.gpg",
+            "rsa3072-binary-sha256.sig.gpg",
+        ),
+        (
+            "rsa3072-binary-sha256.key.asc",
+            "rsa3072-binary-sha256.sig.gpg",
+        ),
+        (
+            "rsa3072-binary-sha256.key.gpg",
+            "rsa3072-binary-sha256.sig.asc",
+        ),
+    ] {
+        verify_detached(&read(k), &read(s), msg.as_slice(), now())
+            .unwrap_or_else(|e| panic!("{k} + {s}: {e}"));
+    }
 }
