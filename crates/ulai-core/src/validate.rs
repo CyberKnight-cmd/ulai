@@ -444,21 +444,29 @@ fn check_elf_files(
             );
             None
         } else {
-            match fs
-                .read(&path, MAX_ELF_BYTES)
-                .map_err(|e| e.to_string())
-                .and_then(|d| elfinfo::analyse(&d).map_err(|e| e.to_string()))
-            {
-                Ok(i) => Some(i),
+            match fs.read(&path, MAX_ELF_BYTES) {
                 Err(e) => {
+                    // Limits (decompression bombs) and corrupt data are errors.
                     out.add(
-                        Severity::Warning,
-                        "elf",
+                        Severity::Error,
+                        "image",
                         Some(&path),
-                        format!("cannot parse: {e}"),
+                        format!("cannot read: {e}"),
                     );
                     None
                 }
+                Ok(data) => match elfinfo::analyse(&data) {
+                    Ok(i) => Some(i),
+                    Err(e) => {
+                        out.add(
+                            Severity::Warning,
+                            "elf",
+                            Some(&path),
+                            format!("cannot parse: {e}"),
+                        );
+                        None
+                    }
+                },
             }
         };
         let name = info

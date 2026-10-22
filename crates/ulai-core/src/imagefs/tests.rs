@@ -155,6 +155,15 @@ fn hostile_symlinks() {
     assert!(matches!(resolve_in(&e, 40, "etc-passwd"), Err(FsError::NotFound(p)) if p == "etc"));
     assert!(err("../dir").contains("escapes the image root"));
     assert_eq!(resolve_in(&e, 40, "dir/./file").unwrap(), "dir/file");
+    // A nested absolute symlink restarts at the image root, not at its
+    // own directory: dir/abs -> /target is "target", never "dir/target".
+    let n = entries(&[
+        ("target", EntryKind::File { size: 1 }),
+        ("dir", EntryKind::Dir),
+        ("dir/target", EntryKind::File { size: 2 }),
+        ("dir/abs", link("/target")),
+    ]);
+    assert_eq!(resolve_in(&n, 40, "dir/abs").unwrap(), "target");
     assert!(resolve_in(&e, 40, "dir/\0x").is_err());
 }
 
