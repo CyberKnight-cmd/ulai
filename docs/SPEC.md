@@ -45,8 +45,11 @@ extension: detection is by AppImage magic plus manifest presence.
 ### 3.1 Image offset and sections
 
 The image starts where the ELF ends: `offset = e_shoff + e_shentsize × e_shnum`,
-which is how AppImage tooling computes it. **[verify: S1/S4]** against the
-upstream type 2 runtime for both ELF32 and ELF64.
+which is how AppImage tooling computes it. Verified for ELF64 on four runtimes
+(upstream type2-runtime, the older AppImageKit runtime, electron-builder's, and
+uruntime): the filesystem magic sits exactly at that offset in all 14 files
+tested (RESEARCH.md, 2026-10-21/22). **[verify]** ELF32: no ELF32 AppImage
+has been tested yet.
 
 - Compute the offset with checked arithmetic; overflow, or an offset past the
   end of the file, makes the file corrupt.
@@ -70,11 +73,18 @@ upstream type 2 runtime for both ELF32 and ELF64.
     `.sha256_sig`. Real tools zero both: go-appimage; AppImageKit's validate
     after the fix for issue #949; Krita's `validate_appimage_signature.sh`.
     ULAI follows the tools.
-- **What is signed.** The OpenPGP signature covers the digest text that the
-  tooling writes (the hex SHA-256), not the AppImage itself. **[verify: S1]**
-  the exact bytes (hex case, trailing newline), the signature type (binary
-  0x00 or text 0x01) and the hash algorithm used by upstream `appimagetool`
-  and by go-appimage. If they differ, handlers accept both.
+- **What is signed.** The OpenPGP detached signature covers the digest
+  *text*, not the AppImage itself: the 64-character **lowercase hex** SHA-256,
+  with **no trailing newline**. Measured (RESEARCH.md, S1):
+
+  | Tool | Signature type | Hash | Keys |
+  |---|---|---|---|
+  | upstream `appimagetool` (continuous build 313, gpgme, GnuPG 2.4.8) | text (0x01) | SHA-512 | RSA, Ed25519 (legacy EdDSA) |
+  | go-appimage `appimagetool` (build 951) | binary (0x00) | SHA-256 | RSA only (its OpenPGP library cannot sign with EdDSA) |
+  | Krita's `sign_appimage.sh` | gpg defaults | — | — |
+
+  Handlers MUST accept both signature types. For text signatures,
+  canonicalisation changes nothing because the message has no line endings.
 - **Signature policy:**
   - Hash algorithms: SHA-256, SHA-384 and SHA-512 are accepted; SHA-1, MD5
     and anything else are rejected.

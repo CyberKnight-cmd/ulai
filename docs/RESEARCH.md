@@ -236,3 +236,85 @@ Add one entry per experiment, in this format:
     every section `ok`.
   - So the CLI integration tests, including the real re-exec probe, pass on a
     restricted Ubuntu kernel as well as on Arch.
+- 2026-10-21/22 · M1 spikes S1–S4 (no production code). Fixtures were built
+  in a disposable Ubuntu 26.04 VM (kernel 7.0) on the Ubuntu machine, using
+  `scripts/vm-run.sh`. Analysis ran on the Arch dev host (kernel 7.2.9) and
+  only *read* the files; no AppImage was executed.
+  - **S1, what the signature covers.** Built signed AppImages with upstream
+    `appimagetool` (continuous build 313, git 854e19e, gpgme, GnuPG 2.4.8)
+    using throwaway RSA-3072 and Ed25519 keys, and with go-appimage
+    `appimagetool` (release 951, reports "version 305") using RSA-3072.
+    - For each file, tested 4 digest variants × 4 message variants with
+      `gpg --verify`. **Exactly one combination verified each time:**
+      SHA-256 over the file with `.sha256_sig` and `.sig_key` zero-filled,
+      signed as the lowercase hex string with no newline.
+    - Zeroing `.digest_md5` as well breaks upstream signatures, because
+      upstream fills that section. go-appimage leaves it empty.
+    - Upstream: text (0x01) signatures with SHA-512, for both RSA and EdDSA.
+      go-appimage: binary (0x00) with SHA-256.
+    - Source reading agrees. Upstream (`src/appimagetool_sign.c`) hashes,
+      signs, then embeds the signature and then the key, so both sections
+      are still zero when the hash is taken. go-appimage
+      (`internal/helpers/digest.go`) hashes both ranges as `0x00` bytes.
+      Krita's `validate_appimage_signature.sh` zeroes each section
+      separately with `dd`, then runs `tr -d '\n'`.
+    - go-appimage quirks:
+      - it uses the deprecated `golang.org/x/crypto/openpgp`, so RSA only;
+      - it reads `pubkey.asc`/`privkey.asc` from the git repository root and
+        **deletes `privkey.asc`** after reading it;
+      - outside a git repository it signs but silently **does not embed the
+        key**, still exiting 0 ("Almost a success").
+    - In all runtimes seen, `.sha256_sig` ends exactly where `.sig_key`
+      starts. ULAI still zeroes the two ranges independently (SPEC §3.2).
+    - gpg 2.4.8 cannot create v6 keys, so v6 and RFC 9580 Ed25519 test
+      vectors still need another source.
+  - **S1b, rPGP 0.21.** Using gpg-made signatures of the same shapes over a
+    64-character hex message:
+    - text/SHA-512 and binary/SHA-256 verify for RSA and legacy EdDSA keys;
+    - adding a trailing newline makes every signature fail;
+    - **rPGP accepts an RSA signature with SHA-1**, so ULAI must reject
+      SHA-1 and MD5 itself by checking the hash algorithm, not rely on the
+      library.
+  - **S2, filesystem readers.**
+    - **SquashFS:** the seven SquashFS apps use only zstd (4) and gzip (3).
+      backhand's zstd is the C libzstd, which breaks the static musl build
+      (no `x86_64-linux-musl-gcc`), and would mean decompressing untrusted
+      input in C.
+      - A custom backhand `CompressionAction` that decodes zstd with
+        `ruzstd` 0.9.1 (pure Rust, MIT), with gzip via `flate2`/miniz_oxide,
+        builds as a static-pie with **zero `-sys` crates**.
+      - It read **every file of all seven apps** (32,576 files, about
+        3.2 GB) without errors, in 0.3–6.4 s each.
+      - Per-file SHA-256 is **identical to `unsquashfs` 4.6.1** for Neovim
+        (zstd, 2,130 files) and KeePassXC (gzip, 284 files).
+    - **DwarFS:** `dwarfs` 0.2.1 (oxalica) read every file of the three
+      AnyLinux apps (mpv, GIMP, OBS: 19,423 files, about 1.7 GB) in
+      0.15–1.12 s. **Not yet cross-checked** against upstream
+      `dwarfsextract`, because the Ubuntu machine was unreachable on
+      2026-10-22.
+      - Its zstd is also C (`zstd-safe`), but in a single call site
+        (`section.rs:638`) that already enforces a decompressed-size limit,
+        so a pure-Rust `ruzstd` path is a small change to propose upstream.
+      - `squishy` 0.5.1's DwarFS code is "ported from dwarfs-rs" (modified
+        copy, about 20% different), so it is not an independent
+        implementation.
+  - **S3, Krita.** The official `krita-6.0.4-x86_64.AppImage` has **no
+    embedded signature**: Krita's release script
+    (`strip_appimage_signature.sh`) nulls both sections to regenerate zsync
+    files.
+    - Krita instead publishes a separate `.sig`, which verifies over the
+      **whole file**: v4 RSA, SHA-512, binary, primary key
+      `E9FB29E74ADEACC5E3035B8AB69EB4CF7468332F` (uid "Dmitry Kazakov (main
+      key)", fetched from keyserver.ubuntu.com).
+    - Only the fingerprint was checked, not who owns the key.
+  - **S4, real-app set** (fetched to `~/.cache/ulai-real-apps`, never
+    committed):
+    - SquashFS: Krita 6.0.4, Kdenlive 26.08.2, Shotcut 26.9.27, KeePassXC
+      2.7.12, Audacity 4.0.1, Obsidian 1.14.4 (Electron), Neovim 0.12.6
+      (command line).
+    - AnyLinux DwarFS: OBS Studio 32.2.2, GIMP 3.2.6, mpv 0.41.0.
+    - **None of the 10 carries an embedded AppImage signature.** All are
+      ELF64, all have the filesystem magic exactly at the ELF end, and all
+      four runtimes put the sections in the same order.
+    - Inkscape was left out because no stable direct download URL was
+      found.
