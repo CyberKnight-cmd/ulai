@@ -151,12 +151,86 @@ fn garbage_inputs_are_corrupt_not_panics() {
         ("key where signature expected", key.clone(), key.clone()),
         ("NUL inside armor", key.clone(), nul_inside),
         ("not UTF-8", vec![0xff, 0xfe, 0x41], sig.clone()),
-        ("oversize", vec![b'A'; MAX_ARMOR_BYTES + 1], sig.clone()),
     ];
     for (what, k, s) in cases {
         let r = verify_detached(&k, &s, msg.as_slice(), now());
         assert!(matches!(r, Err(Rejection::Corrupt(_))), "{what}: {r:?}");
     }
+    // The size limit is ULAI's policy, not damage.
+    let r = verify_detached(
+        &vec![b'A'; MAX_ARMOR_BYTES + 1],
+        &sig,
+        msg.as_slice(),
+        now(),
+    );
+    assert!(
+        matches!(&r, Err(Rejection::Unsupported(m)) if m.contains("64 KiB")),
+        "{r:?}"
+    );
+}
+
+/// A v4 public-subkey packet (tag 14) for ECDSA on a curve no one knows:
+/// OID 1.3.6.1.4.1.37210.99 (the arc the OpenPGP interoperability test
+/// suite uses for mock keys), then bytes that are not an MPI.
+pub(super) fn unknown_curve_subkey_packet() -> Vec<u8> {
+    let oid = [0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xa2, 0x5a, 0x63];
+    let mut body = vec![4, 0x5e, 0x0b, 0xe1, 0x00, 19, oid.len() as u8];
+    body.extend_from_slice(&oid);
+    body.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+    let mut p = vec![0xC0 | 14, body.len() as u8];
+    p.extend(body);
+    p
+}
+
+/// rPGP 0.21 cannot parse a certificate with such a subkey (RFC 9580 lets
+/// implementations ignore subkeys they do not understand). The framing is
+/// intact, so ULAI reports it as unsupported (exit 5), not as corrupt or
+/// invalid. See the upstream issue linked from docs/RESEARCH.md.
+#[test]
+fn certificate_rpgp_cannot_read_is_unsupported() {
+    let mut key = read("rsa3072-binary-sha256.key.gpg");
+    key.extend(unknown_curve_subkey_packet());
+    let r = verify_detached(
+        &key,
+        &read("rsa3072-binary-sha256.sig.gpg"),
+        read("msg").as_slice(),
+        now(),
+    );
+    assert!(
+        matches!(&r, Err(Rejection::Unsupported(m)) if m.contains("rPGP")),
+        "{r:?}"
+    );
+    // The same bytes with the last one cut off: the framing is broken.
+    key.pop();
+    let r = verify_detached(
+        &key,
+        &read("rsa3072-binary-sha256.sig.gpg"),
+        read("msg").as_slice(),
+        now(),
+    );
+    assert!(matches!(r, Err(Rejection::Corrupt(_))), "{r:?}");
+}
+
+#[test]
+fn packet_framing_handles_every_length_form() {
+    // New format: one-octet, two-octet, five-octet and partial lengths.
+    let mut b = vec![0xC2, 2, 0xAA, 0xBB];
+    b.extend([0xC2, 192, 0]);
+    b.extend(vec![0; 192]);
+    b.extend([0xC2, 255, 0, 0, 0, 1, 0xCC]);
+    b.extend([0xCB, 0xE1, 1, 2, 1, 9]); // partial 2 bytes, then final 1
+    let f = packet_framing(&b).unwrap();
+    assert_eq!(f.iter().map(|p| p.0).collect::<Vec<_>>(), [2, 2, 2, 11]);
+    assert_eq!(f[0].1, 2);
+    // Old format: one-, two-, four-octet and indeterminate lengths.
+    let mut o = vec![0x88, 1, 0xAA, 0x89, 0, 1, 0xBB, 0x8A, 0, 0, 0, 1, 0xCC];
+    o.extend([0x8B, 1, 2, 3]);
+    let f = packet_framing(&o).unwrap();
+    assert_eq!(f.iter().map(|p| p.0).collect::<Vec<_>>(), [2, 2, 2, 2]);
+    // Broken: length past the end, not a packet header, empty.
+    assert_eq!(packet_framing(&[0xC2, 5, 1]), None);
+    assert_eq!(packet_framing(b"hello"), None);
+    assert_eq!(packet_framing(&[]), None);
 }
 
 #[test]

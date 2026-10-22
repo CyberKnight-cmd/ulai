@@ -270,8 +270,9 @@ fn trimmed<'a>(input: &'a [u8], what: &str) -> Result<&'a [u8], Rejection> {
         input
     };
     if bytes.len() > MAX_ARMOR_BYTES {
-        return Err(corrupt(format!(
-            "{what} is larger than {MAX_ARMOR_BYTES} bytes"
+        return Err(unsupported(format!(
+            "the {what} is larger than ULAI's limit of {} KiB",
+            MAX_ARMOR_BYTES / 1024
         )));
     }
     if bytes.is_empty() {
@@ -283,7 +284,7 @@ fn trimmed<'a>(input: &'a [u8], what: &str) -> Result<&'a [u8], Rejection> {
 /// Parses exactly one transferable public key (armored or binary).
 fn parse_key(input: &[u8]) -> Result<SignedPublicKey, Rejection> {
     let bytes = trimmed(input, "key")?;
-    let err = |e: pgp::errors::Error| corrupt(format!("cannot parse the public key: {e}"));
+    let err = |e: pgp::errors::Error| parse_failure(bytes, "public key", 6, &e);
     let mut keys = Vec::new();
     if is_armor(bytes) {
         let (iter, _) =
@@ -309,51 +310,124 @@ fn parse_key(input: &[u8]) -> Result<SignedPublicKey, Rejection> {
     }
 }
 
+/// rPGP could not parse `bytes`. If the OpenPGP packet framing is intact
+/// (every header and length is well-formed and the packets fill the input
+/// exactly) and the first packet other than marker and padding is of the
+/// expected kind (`tag`: 6 public key, 2 signature), the data is most likely
+/// valid OpenPGP that uses something rPGP does not support yet, such as a
+/// subkey on an unknown curve: unsupported. Otherwise it is damaged or not
+/// what was asked for: corrupt.
+fn parse_failure(bytes: &[u8], what: &str, tag: u8, e: &pgp::errors::Error) -> Rejection {
+    const MARKER: u8 = 10;
+    const PADDING: u8 = 21;
+    let first_tag = binary(bytes).and_then(|b| {
+        packet_framing(&b)?
+            .into_iter()
+            .map(|(t, _)| t)
+            .find(|t| ![MARKER, PADDING].contains(t))
+    });
+    if first_tag == Some(tag) {
+        unsupported(format!(
+            "the {what} is well-formed OpenPGP, but ULAI's OpenPGP library \
+             (rPGP) cannot read it: {e}"
+        ))
+    } else {
+        corrupt(format!("cannot parse the {what}: {e}"))
+    }
+}
+
+/// The binary packets of armored or binary input (`None` if the armor is
+/// broken).
+fn binary(input: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Read as _;
+    if !is_armor(input) {
+        return Some(input.to_vec());
+    }
+    let mut v = Vec::new();
+    pgp::armor::Dearmor::new(input)
+        .take(MAX_ARMOR_BYTES as u64)
+        .read_to_end(&mut v)
+        .ok()?;
+    Some(v)
+}
+
+/// Splits binary OpenPGP data into packets by their framing alone (RFC 9580
+/// §4.2), without interpreting any body. Returns `(tag, body offset)` for
+/// each packet, or `None` if a header or length is malformed or the packets
+/// do not end exactly at the end of the input.
+fn packet_framing(bin: &[u8]) -> Option<Vec<(u8, usize)>> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bin.len() {
+        let h = bin[i];
+        if h & 0x80 == 0 {
+            return None;
+        }
+        if h & 0x40 != 0 {
+            // New format; partial body lengths chain until a final length.
+            let tag = h & 0x3F;
+            i += 1;
+            out.push((tag, 0));
+            loop {
+                let l0 = *bin.get(i)? as usize;
+                let (len, hl, last) = match l0 {
+                    0..=191 => (l0, 1, true),
+                    192..=223 => (((l0 - 192) << 8) + *bin.get(i + 1)? as usize + 192, 2, true),
+                    224..=254 => (1 << (l0 & 0x1F), 1, false),
+                    _ => {
+                        let b = bin.get(i + 1..i + 5)?;
+                        (u32::from_be_bytes(b.try_into().ok()?) as usize, 5, true)
+                    }
+                };
+                if out.last()?.1 == 0 {
+                    out.last_mut()?.1 = i + hl;
+                }
+                i = i.checked_add(hl)?.checked_add(len)?;
+                if i > bin.len() {
+                    return None;
+                }
+                if last {
+                    break;
+                }
+            }
+        } else {
+            let tag = (h >> 2) & 0x0F;
+            let (len, hl) = match h & 3 {
+                0 => (*bin.get(i + 1)? as usize, 2),
+                1 => (
+                    u16::from_be_bytes(bin.get(i + 1..i + 3)?.try_into().ok()?) as usize,
+                    3,
+                ),
+                2 => (
+                    u32::from_be_bytes(bin.get(i + 1..i + 5)?.try_into().ok()?) as usize,
+                    5,
+                ),
+                _ => (bin.len() - i - 1, 1), // indeterminate: to the end
+            };
+            out.push((tag, i + hl));
+            i = i.checked_add(hl)?.checked_add(len)?;
+            if i > bin.len() {
+                return None;
+            }
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// Version byte of the first packet if it is a public-key packet (tag 6).
 fn first_public_key_version(input: &[u8]) -> Option<u8> {
-    use std::io::Read as _;
-    let bin: Vec<u8> = if is_armor(input) {
-        let mut v = Vec::new();
-        pgp::armor::Dearmor::new(input)
-            .take(MAX_ARMOR_BYTES as u64)
-            .read_to_end(&mut v)
-            .ok()?;
-        v
-    } else {
-        input.to_vec()
-    };
-    let h = *bin.first()?;
-    if h & 0x80 == 0 {
-        return None;
-    }
-    let (tag, header_len) = if h & 0x40 != 0 {
-        let l0 = *bin.get(1)?;
-        let hl = match l0 {
-            0..=191 => 2,
-            192..=223 => 3,
-            255 => 6,
-            _ => return None, // partial lengths are not used for keys
-        };
-        (h & 0x3F, hl)
-    } else {
-        let hl = match h & 3 {
-            0 => 2,
-            1 => 3,
-            2 => 5,
-            _ => return None,
-        };
-        ((h >> 2) & 0x0F, hl)
-    };
+    let bin = binary(input)?;
+    let (tag, body) = *packet_framing(&bin)?.first()?;
     if tag != 6 {
         return None;
     }
-    bin.get(header_len).copied()
+    bin.get(body).copied()
 }
 
 /// Parses exactly one detached signature packet (armored or binary).
 fn parse_signature(input: &[u8]) -> Result<Signature, Rejection> {
     let bytes = trimmed(input, "signature")?;
-    let err = |e: pgp::errors::Error| corrupt(format!("cannot parse the signature: {e}"));
+    let err = |e: pgp::errors::Error| parse_failure(bytes, "signature", 2, &e);
     let sig = if is_armor(bytes) {
         DetachedSignature::from_string(armor_text(bytes, "signature")?)
             .map_err(err)?

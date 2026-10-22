@@ -249,3 +249,25 @@ fn verify_reaches_the_signature_on_dwarfs_without_reading_it() {
     );
     assert_eq!((r.status, r.ulai_file), (Status::Unsigned, Some(false)));
 }
+
+#[test]
+fn oversized_key_file_is_unsupported_and_says_how_to_shrink_it() {
+    let d = Dir::new();
+    let app = d.write("app.AppImage", &Builder::default().build());
+    d.write("app.AppImage.sig", b"x");
+    let key = d.write("big.asc", &vec![b'A'; MAX_ARMOR_BYTES + 1]);
+    let r = run(
+        &app,
+        &Options {
+            key: Some(key),
+            ..Options::default()
+        },
+    );
+    assert_eq!(r.status, Status::Unsupported);
+    let reason = r.reason.unwrap();
+    assert!(reason.contains("64 KiB"), "{reason}");
+    assert!(
+        reason.contains("gpg --export --export-options export-minimal <fingerprint>"),
+        "{reason}"
+    );
+}

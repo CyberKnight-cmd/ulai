@@ -188,7 +188,10 @@ pub fn verify(path: &Path, opts: &Options) -> io::Result<Report> {
             None => match &opts.key {
                 Some(p) => {
                     report.key_source = Some(KeySource::Supplied);
-                    read_small(p, "key")?
+                    match read_small(p, "key")? {
+                        Ok(k) => k,
+                        Err(m) => return Ok(report.with(Status::Unsupported, m)),
+                    }
                 }
                 None => {
                     return Ok(report.with(
@@ -239,7 +242,10 @@ pub fn verify(path: &Path, opts: &Options) -> io::Result<Report> {
     };
     report.method = Some(Method::Detached);
     report.signature_file = Some(sig_path.display().to_string());
-    let sig = read_small(&sig_path, "signature")?;
+    let sig = match read_small(&sig_path, "signature")? {
+        Ok(s) => s,
+        Err(m) => return Ok(report.with(Status::Unsupported, m)),
+    };
     let Some(key_path) = &opts.key else {
         return Ok(report.with(
             Status::SignatureUnverifiable,
@@ -247,7 +253,10 @@ pub fn verify(path: &Path, opts: &Options) -> io::Result<Report> {
         ));
     };
     report.key_source = Some(KeySource::Supplied);
-    let key = read_small(key_path, "key")?;
+    let key = match read_small(key_path, "key")? {
+        Ok(k) => k,
+        Err(m) => return Ok(report.with(Status::Unsupported, m)),
+    };
     let data = io::BufReader::with_capacity(
         1 << 20,
         PositionedReader {
@@ -312,22 +321,28 @@ fn discover(path: &Path) -> Discovery {
     }
 }
 
-/// Reads a key or signature file the user named, with the armor size limit.
-fn read_small(path: &Path, what: &str) -> io::Result<Vec<u8>> {
+/// Reads a key or signature file the user named. Over the size limit, the
+/// inner `Err` says why (status `unsupported`).
+fn read_small(path: &Path, what: &str) -> io::Result<Result<Vec<u8>, String>> {
     let mut buf = Vec::new();
     File::open(path)?
         .take(MAX_ARMOR_BYTES as u64 + 1)
         .read_to_end(&mut buf)?;
-    if buf.len() > MAX_ARMOR_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "{what} file {} is larger than {MAX_ARMOR_BYTES} bytes",
-                path.display()
-            ),
-        ));
+    if buf.len() <= MAX_ARMOR_BYTES {
+        return Ok(Ok(buf));
     }
-    Ok(buf)
+    let mut m = format!(
+        "the {what} file {} is larger than ULAI's limit of {} KiB",
+        path.display(),
+        MAX_ARMOR_BYTES / 1024
+    );
+    if what == "key" {
+        m.push_str(
+            "; export only the key and its self-signatures, without third-party \
+             certifications: gpg --export --export-options export-minimal <fingerprint>",
+        );
+    }
+    Ok(Err(m))
 }
 
 /// Streams the whole file through the already open handle (positioned reads

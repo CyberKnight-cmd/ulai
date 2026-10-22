@@ -140,6 +140,18 @@ exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
     by the signature, so anyone could add them; they are ignored.
   - NUL padding is stripped only after ASCII armor (embedded sections are
     armored and padded). Binary keys and signatures are read as they are.
+  - **Data ULAI cannot read is `unsupported`, not `invalid`.** If rPGP
+    fails to parse a key or signature whose OpenPGP packet framing is
+    intact, and whose first packet (after marker and padding packets) is
+    the expected kind (public key or signature), the result is
+    `unsupported` (exit 5): it is most likely valid OpenPGP that rPGP
+    cannot read yet, for example a certificate with a subkey on an unknown
+    curve (rpgp/rpgp#869). ULAI does not filter packets to work around
+    this. Broken framing, or the wrong kind of data, is `corrupt` (exit 5).
+  - Keys and signatures are limited to 64 KiB each (`unsupported` above
+    that). For a `--key` file over the limit, the message suggests
+    `gpg --export --export-options export-minimal <fingerprint>`, which
+    leaves out third-party certifications.
 
 #### 3.2.1 Detached signatures (legacy AppImages, ADR-016)
 
