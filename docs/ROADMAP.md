@@ -59,29 +59,63 @@ All six fuzz targets ran for 3 hours each with no finding (RESEARCH.md).*
 
 ## M2 — Sandbox (`ulai-run`) and the stealer suite (~3 weeks) — core research milestone
 
+Plan approved 2026-10-24 (ADR-013 → (d), SPEC §6.7).
+
+- [ ] **Experiments first** (results in RESEARCH.md):
+  - seccomp user notification with `ADDFD`, and `pidfd_getfd`, probed by
+    `ulai doctor` on every test system;
+  - what an address on a connected `AF_UNIX` stream or seqpacket socket can
+    do with `sendto`/`sendmsg`;
+  - `connect()` through `/proc/self/fd/<O_PATH fd>` to a socket;
+  - io_uring `openat` and `connect` under Landlock.
+- [ ] **Electron spike (decision point):** Obsidian under Landlock plus
+      `no_new_privs`, with Chromium's sandbox on and with `--no-sandbox`, on
+      Arch, and on Ubuntu 26.04 with and without an AppArmor profile for
+      `ulai-run`. If Chromium's sandbox cannot run under Guarded on Ubuntu
+      even with a profile, write up the options and stop. Electron apps are
+      never silently defaulted to Full or `--no-sandbox`.
 - [ ] Policy builder for Strict, Guarded and Full (SPEC §6), with ABI probing,
       protection labels and the fail-closed rules.
+- [ ] `ulai-run --print-policy`: the exact Landlock ruleset, D-Bus policy and
+      seccomp policy for an app (in M2, from `--appdir`).
 - [ ] xdg-dbus-proxy integration (SPEC §7).
+- [ ] Seccomp filter and `connect()` supervisor (SPEC §6.7), with a test that
+      guards against a deadlock while the listener fd is handed over.
 - [ ] **Stealer test app**, packaged as a ULAI file. Each attempt reports pass or
       fail:
   - Read secrets: `~/.ssh/id_*`, `~/.aws/credentials`, `~/.netrc`,
     `~/.git-credentials`, browser profile directories, wallet directories.
+    Also through a symlink planted in a user folder that points into
+    `~/.ssh`.
   - Look up an item through the Secret Service.
   - Plant persistence: write `~/.bashrc`, drop a file into
-    `~/.config/autostart/` and `~/.config/systemd/user/`, write `/etc/cron.d`.
+    `~/.config/autostart/` and `~/.config/systemd/user/`, write `/etc/cron.d`,
+    write a launcher into `~/.local/share/applications`, write into a
+    `$PATH` directory such as `~/bin`, and use `at` and `crontab` (setuid).
   - Escape the sandbox:
     - run `systemd-run --user`, and call `StartTransientUnit` over D-Bus;
     - connect to the real session-bus socket and to X11;
+    - io_uring `connect` and `openat`;
     - signal or ptrace a process outside the sandbox;
     - run `sudo` and `pkexec`.
   - Tamper with the ULAI store.
 - [ ] **Gate:** on a kernel with the Strong label, every stealer attempt fails in
       Guarded mode, and the honest reference apps still work.
-- [ ] Run the same suite on kernels with the Weak label and record the results.
-      This feeds ADR-013.
+- [ ] Run the same suite on kernels with the Weak label, with the (d)
+      supervisor. A system keeps the Weak label until the suite passes on it.
 - [ ] Census: run the reference apps in Guarded mode and log Landlock denials
       (audit logging, ABI ≥ 7). Classify each breakage, tune the hidden
       allowlist, and update SPEC.
+  - First on the Strong systems: Arch, plus a second VM with a 7.1+ kernel.
+    Fedora 44 counts only if an updated kernel reaches ABI 9; otherwise it
+    joins the Weak round.
+  - Then on the Weak systems, once (d) works.
+  - DwarFS apps are unpacked for the census with upstream `dwarfsextract`
+    inside the test VM. That is harness setup only, never product code.
+- [ ] **Fail-closed test:** in a VM booted without Landlock (`lsm=` without
+      `landlock`), Strict and Guarded refuse to start.
+- [ ] **Overhead:** launch time of `ulai-run` versus running the AppImage
+      directly, n ≥ 10, with median and spread.
 
 ## M3 — Install, store, integration (~2 weeks)
 

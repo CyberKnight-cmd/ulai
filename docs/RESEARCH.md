@@ -524,4 +524,27 @@ Add one entry per experiment, in this format:
     | signature | 18.0 M | 580 MB |
     | elf | 21.9 M | 537 MB |
     | desktop | 172.1 M | 585 MB |
+- 2026-10-24 · Arch dev host (Ryzen 7 7435HS, kernel 7.2.9) · **dwarfs-rs
+  with a pure-Rust Zstd decoder**
+  - The patch adds a `ruzstd` feature to the `dwarfs` crate, decoding with
+    ruzstd 0.9.1 instead of zstd-safe. Proposed upstream as
+    oxalica/dwarfs-rs#4 (follow-up to #3). The `ruzstd`-only build has no
+    `cc` or `-sys` crates in its tree.
+  - Differential test: every regular file read with the C build and with
+    the `ruzstd` build, release mode, one run each.
+
+    | Image | Files | Bytes | C | ruzstd |
+    |---|---|---|---|---|
+    | mpv 0.41.0 | 1,763 | 89.9 MB | 0.24 s | 0.57 s |
+    | GIMP 3.2.6 | 9,495 | 748.6 MB | 19.6 s | 66.8 s |
+    | OBS Studio 32.2.2 | 7,876 | 756.7 MB | 7.6 s | 11.7 s |
+
+    **Every file's SHA-256 is identical** between the two builds. The
+    `ruzstd` build is 1.5–3.4× slower in these single runs.
+- 2026-10-24 · Arch dev host · **fuzz target `sigpackets`** (the signature
+  packet splitter, SPEC §3.2)
+  - It checks that every accepted packet is one complete signature packet
+    with a definite length, and that there are 1–16 of them.
+  - First run: 2 minutes, 1.7 M executions, no finding. Added to the CI
+    fuzz smoke test.
 

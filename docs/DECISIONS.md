@@ -92,8 +92,17 @@ Options:
   `SECCOMP_IOCTL_NOTIF_ADDFD` in its Linux sandbox and supervisor; its design
   has not been reviewed in detail yet. Not implemented.
 
-The M2 plan must choose among these options, using M2's measurements.
-*Open.*
+**Decision (2026-10-24): (d).** It is the only option that needs neither
+user namespaces nor AppArmor changes, and so the only one that can work on
+every measured Weak system: (b) fails at `setgroups` on Ubuntu 24.04, 26.04
+and GitHub Actions, and (c) would refuse Guarded on five of the six. The
+design is in SPEC §6.7: only `connect()` is mediated; the supervisor
+connects the app's own socket (`pidfd_getfd`, or a new socket plus
+`SECCOMP_IOCTL_NOTIF_ADDFD` where Yama blocks it) and never lets a mediated
+call continue. io_uring and `AF_UNIX` datagram sockets are refused below
+ABI 9. Seccomp user notification has not yet been probed on the test
+systems; `ulai doctor` gets that probe first. Systems keep the Weak label
+until the stealer suite passes on them. *Accepted* (2026-10-24).
 
 **ADR-014 — The CLI and launcher ship as static musl binaries; they depend
 only on the kernel.** `ulai` and `ulai-run` are built for

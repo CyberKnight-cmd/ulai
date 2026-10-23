@@ -307,6 +307,8 @@ fn own_paths() {
         "~/./x", // not inside $HOME
         "~/.ssh",
         "~/.ssh/known_hosts",
+        "~/bin",
+        "~/bin/tool", // $PATH directory (SPEC §6.3)
         "~/.config/autostart/x",
         "~/.mozilla/firefox", // inside protected
         "~/.local/share/ulai",

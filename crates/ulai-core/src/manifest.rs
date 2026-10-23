@@ -89,6 +89,7 @@ pub const PROTECTED: &[&str] = &[
     "~/.xprofile",
     "~/.xinitrc",
     "~/.local/bin",
+    "~/bin",
     "~/.local/share/gnome-shell/extensions",
     "~/.local/share/plasma",
     "~/.local/share/ulai",

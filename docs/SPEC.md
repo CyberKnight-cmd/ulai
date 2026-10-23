@@ -143,10 +143,11 @@ exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
     (rPGP's detached-signature parser returns the first signature and never
     reads the rest).
     - Allowed: signature, marker and padding packets, and unknown
-      non-critical packet types (40–63), which are skipped with a warning
-      (RFC 9580 §4.3). Any other type (literal data, compressed data, keys,
-      unassigned critical types, …) is `corrupt`. Partial or indeterminate
-      packet lengths are `corrupt`.
+      non-critical packet types (40–63), which RFC 9580 §4.3 says to ignore;
+      they are skipped with a warning. Every other type ID (0–39: literal
+      data, compressed data, keys, unassigned critical types, …) is
+      `corrupt`. Partial and indeterminate packet lengths are `corrupt`
+      (GnuPG's rule for signatures).
     - A signature file: only whitespace before the armor and after its
       footer; for binary, nothing after the last packet. Anything else is
       `corrupt`.
@@ -163,10 +164,16 @@ exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
     - The verdict is valid if at least one signature is valid by the
       trusted key (the embedded `.sig_key`, the `--key` file, or from M3
       the pinned key) under every rule above. Order does not matter.
-    - Only document signatures count: binary (0x00) and text (0x01), which
-      upstream appimagetool produces (S1). Any other type, such as a key
+    - Only document signatures count. Any other type, such as a key
       certification (0x10–0x13), never counts and is reported as
       "ignored: not a document signature".
+      - Binary (0x00) counts everywhere.
+      - Text (0x01) counts **only in the embedded scheme**, where the signed
+        data is the hex digest (upstream appimagetool makes text signatures,
+        S1). A text signature is computed over line-ending-normalised data,
+        so it does not bind a binary file's exact bytes: inserting a CR
+        before an LF leaves it valid. For a detached signature over a whole
+        file it is `unsupported`.
     - If a signature by the trusted key fails while another one by the same
       key is valid, the result is valid, with a warning.
     - If none is valid, the reported reason is, in this order: the worst
@@ -454,8 +461,9 @@ Inputs: image path `I`, permissions `P`, own paths `O`, `$HOME` = `H`,
    6. Home `H`: for each entry `e` of `H` (using `lstat`), if its name does not
       start with `.` and it is not excluded, grant user rights: read file, read
       dir, write file, truncate, make reg, make dir, make sym, remove file,
-      remove dir, refer. **Excluded:** any directory listed in `$PATH` (for
-      example `~/bin`). For symlinked entries, resolve the target and grant it
+      remove dir, refer. **Excluded:** `~/bin` and every directory inside `H`
+      listed in `$PATH` at launch; they get read file, read dir and execute
+      only, never write (protected set, below). For symlinked entries, resolve the target and grant it
       only if it lies outside hidden directories, `$PATH` directories and the
       store. **[verify]** that Landlock rules attach to the resolved inode.
    7. Hidden allowlist (read-only, existing entries only):
@@ -484,7 +492,9 @@ this list exists for validation and consent wording: `~/.ssh`, `~/.gnupg`,
 shell startup files (`~/.bashrc`, `~/.bash_profile`, `~/.profile`, `~/.zshrc`,
 `~/.zprofile`, `~/.config/fish`), auto-start points (`~/.config/autostart`,
 `~/.config/systemd`, `~/.local/share/systemd`, `~/.config/environment.d`,
-`~/.xprofile`, `~/.xinitrc`), `~/.local/bin`, desktop shell extensions
+`~/.xprofile`, `~/.xinitrc`), `~/.local/bin`, `~/bin` and every directory
+inside `$HOME` listed in `$PATH` at launch (these three stay readable and
+executable, never writable), desktop shell extensions
 (`~/.local/share/gnome-shell/extensions`, `~/.local/share/plasma`), and the ULAI
 store.
 
@@ -510,6 +520,42 @@ If ruleset creation fails, or the protection label is None, `ulai-run` MUST NOT
 start a Strict or Guarded app. It exits with a documented error code; the
 handler explains why and offers Full trust behind explicit consent. That choice
 is not remembered unless the user ticks "always for this app".
+
+### 6.7 Seccomp filter and supervisor (ADR-013)
+
+Installed in Strict and Guarded, after Landlock and `no_new_privs`, before
+exec. M2 implements it; `ulai-run --print-policy` prints it.
+
+- **Architecture.** On x86_64, only native x86_64 syscalls are allowed. i386
+  is refused, and any syscall number with the x32 bit (`0x40000000`) set is
+  refused explicitly.
+- **Socket families.** Without `network`, `socket()` and `socketpair()` allow
+  only `AF_UNIX` and `AF_NETLINK`, on every ABI.
+- **Below ABI 9** (no Landlock control of pathname UNIX sockets):
+  - `AF_UNIX` `SOCK_DGRAM` sockets are refused; `SOCK_DGRAM` socketpairs
+    stay allowed.
+  - `io_uring_setup`, `io_uring_enter` and `io_uring_register` are refused,
+    because io_uring operations bypass seccomp's syscall filtering.
+  - `connect()` is mediated by a supervisor through seccomp user
+    notification. It is the only mediated call.
+- **The supervisor** is `ulai-run`'s parent process, outside the sandbox. The
+  child creates the filter, passes the listener fd to the parent over a
+  socketpair made before the filter, and execs the app.
+  - It reads the address from the app's memory once and calls
+    `SECCOMP_IOCTL_NOTIF_ID_VALID` after every read of the target's memory.
+  - It allows only sockets on the policy's allowlist, compared by device and
+    inode after resolving the path with `O_PATH`, and connects through
+    `/proc/self/fd/<fd>` if the M2 experiment confirms that works.
+    Abstract-namespace connects are refused below ABI 6, where Landlock
+    scoping is missing.
+  - It performs the connect itself: it takes the app's own socket with
+    `pidfd_getfd` (which keeps its options and flags) after checking that
+    the fd is an `AF_UNIX` stream or seqpacket socket. Where Yama
+    `ptrace_scope` ≥ 2 blocks `pidfd_getfd`, it creates a new socket and
+    injects it with `SECCOMP_IOCTL_NOTIF_ADDFD`.
+  - It never answers a mediated call with "continue".
+- The label stays Weak on a system until the stealer suite passes on it
+  (ROADMAP M2).
 
 ## 7. Session bus mediation
 
@@ -688,6 +734,15 @@ escalation via setuid; tampering with the store or other apps.
 **Out of scope:** kernel exploits; X11 sessions once `x11` is granted; misuse of
 user files the user granted; network exfiltration of granted data; a malicious
 first install from a compromised publisher (TOFU only protects updates).
+
+**Residual risks** (known, documented, not blocked):
+
+- A `.desktop` launcher dropped on `~/Desktop`. It is a user folder, so
+  `user-files` lets the app write there, and some desktops run such files
+  when the user double-clicks them.
+- On Landlock ABI < 6 there is no signal scoping, so the app can send
+  signals to the user's processes outside the sandbox. This allows denial of
+  service only, not escape.
 
 ## 14. Open problems
 
