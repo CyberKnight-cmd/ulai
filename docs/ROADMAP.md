@@ -44,7 +44,7 @@ tagged as a release.*
   - no RPATH/RUNPATH pointing at absolute host paths;
   - the entry point exists and is executable;
   - `arch` matches the image.
-- [ ] Fuzz the ELF, SquashFS and manifest parsers (cargo-fuzz), several hours each.
+- [x] Fuzz the ELF, SquashFS and manifest parsers (cargo-fuzz), several hours each.
       *(2026-10-22: six targets exist and CI smoke-tests them; each has run
       for 1 hour without findings. The multi-hour runs are still to do.)*
 
@@ -52,10 +52,10 @@ tagged as a release.*
 crafted hostile files (bad signature, path traversal in the image, a
 decompression bomb), without executing any of them.
 
-*Status (2026-10-22): "done when" is met. All three commands ran on the 10
+*Status (2026-10-23): "done when" is met. All three commands ran on the 10
 real AppImages (30 runs) and on the crafted hostile files, each under
 `strace -f -e trace=execve,execveat`, with no exec other than ulai's own.
-Open: the multi-hour fuzzing runs.*
+All six fuzz targets ran for 3 hours each with no finding (RESEARCH.md).*
 
 ## M2 — Sandbox (`ulai-run`) and the stealer suite (~3 weeks) — core research milestone
 

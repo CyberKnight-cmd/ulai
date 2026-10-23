@@ -507,6 +507,21 @@ Add one entry per experiment, in this format:
   - Executions before the stop: container 10.5 M, image 17.8 M, manifest
     74.4 M, signature 10.4 M, elf 14.2 M, desktop 57.6 M. That is about
     1.8–1.9× the 1-hour run, so roughly 2 hours per target, not 3.
-  - Rerun started 2026-10-23 under `systemd-inhibit --what=sleep:idle`; the
-    roadmap item stays open until it completes.
+  - Rerun under `systemd-inhibit --what=sleep:idle`: see the next entry.
+- 2026-10-23 · Arch dev host (Ryzen 7 7435HS, kernel 7.2.9) · **fuzzing,
+  3 hours per target**
+  - cargo-fuzz on nightly 1.101, built at `8959b84`, from
+    2026-10-23T10:08:52Z to 13:08:54Z. The six targets ran in parallel with
+    a 10 s timeout, seeded by `fuzz/seed.sh`, and sleep was inhibited.
+  - **No crash, timeout or OOM in any target.** Every target exited 0, and
+    the slowest single input took under 1 s.
+
+    | Target | Executions | Peak RSS |
+    |---|---|---|
+    | container | 16.9 M | 460 MB |
+    | image | 27.2 M | 370 MB |
+    | manifest | 99.6 M | 1,026 MB |
+    | signature | 18.0 M | 580 MB |
+    | elf | 21.9 M | 537 MB |
+    | desktop | 172.1 M | 585 MB |
 
