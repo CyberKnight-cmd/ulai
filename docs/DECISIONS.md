@@ -99,8 +99,8 @@ and GitHub Actions, and (c) would refuse Guarded on five of the six. The
 design is in SPEC §6.7: only `connect()` is mediated; the supervisor
 connects the app's own socket (`pidfd_getfd`, or a new socket plus
 `SECCOMP_IOCTL_NOTIF_ADDFD` where Yama blocks it) and never lets a mediated
-call continue. io_uring and `AF_UNIX` datagram sockets are refused below
-ABI 9. Seccomp user notification has not yet been probed on the test
+call continue. io_uring and `AF_UNIX` datagram sockets (including datagram
+socketpairs) are refused below ABI 9. Seccomp user notification has not yet been probed on the test
 systems; `ulai doctor` gets that probe first. Systems keep the Weak label
 until the stealer suite passes on them. *Accepted* (2026-10-24).
 

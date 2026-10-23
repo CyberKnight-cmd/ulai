@@ -532,8 +532,11 @@ exec. M2 implements it; `ulai-run --print-policy` prints it.
 - **Socket families.** Without `network`, `socket()` and `socketpair()` allow
   only `AF_UNIX` and `AF_NETLINK`, on every ABI.
 - **Below ABI 9** (no Landlock control of pathname UNIX sockets):
-  - `AF_UNIX` `SOCK_DGRAM` sockets are refused; `SOCK_DGRAM` socketpairs
-    stay allowed.
+  - `AF_UNIX` `SOCK_DGRAM` sockets are refused, from both `socket()` and
+    `socketpair()`. An address given to `sendto`/`sendmsg` on a connected
+    datagram socket, even one from a socketpair, still reaches that other
+    pathname socket (RESEARCH E2), and the filter cannot see the address
+    inside `sendmsg`. Stream and seqpacket socketpairs stay allowed.
   - `io_uring_setup`, `io_uring_enter` and `io_uring_register` are refused,
     because io_uring operations bypass seccomp's syscall filtering.
   - `connect()` is mediated by a supervisor through seccomp user

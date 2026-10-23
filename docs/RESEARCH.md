@@ -576,8 +576,8 @@ Add one entry per experiment, in this format:
     | datagram **socketpair** | **succeeds and the data reaches B** |
 
     So a datagram socketpair can send to any pathname datagram socket.
-    Allowing them below ABI 9 (SPEC §6.7, as approved) leaves that path
-    open. Decision pending.
+    Decision (2026-10-24): below ABI 9, `AF_UNIX` datagram socketpairs are
+    refused too (SPEC §6.7).
   - **E3, `connect()` through `/proc/self/fd/<O_PATH fd>`:** works. The
     `O_PATH` fd's `fstat` shows the socket inode, so the supervisor can
     compare device and inode before connecting.
