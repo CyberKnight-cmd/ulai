@@ -552,7 +552,9 @@ exec. M2 implements it; `ulai-run --print-policy` prints it.
     `pidfd_getfd` (which keeps its options and flags) after checking that
     the fd is an `AF_UNIX` stream or seqpacket socket. Where Yama
     `ptrace_scope` ≥ 2 blocks `pidfd_getfd`, it creates a new socket and
-    injects it with `SECCOMP_IOCTL_NOTIF_ADDFD`.
+    injects it with `SECCOMP_IOCTL_NOTIF_ADDFD` and `SETFD`, without
+    `SECCOMP_ADDFD_FLAG_SEND` (with `SEND`, the app's `connect()` would
+    return the fd number instead of 0), then answers the call with 0.
   - It never answers a mediated call with "continue".
 - The label stays Weak on a system until the stealer suite passes on it
   (ROADMAP M2).

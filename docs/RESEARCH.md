@@ -547,4 +547,45 @@ Add one entry per experiment, in this format:
     with a definite length, and that there are 1–16 of them.
   - First run: 2 minutes, 1.7 M executions, no finding. Added to the CI
     fuzz smoke test.
+- 2026-10-24 · Arch dev host, kernel 7.2.9-arch1-1, Landlock ABI 10, Yama
+  `ptrace_scope` 1 · **M2 experiments E1–E4** (seccomp supervisor, socket
+  semantics, io_uring). Throwaway programs on raw `libc` (plus the `landlock`
+  and `io-uring` crates for E4), not product code. Not yet run on the Weak
+  systems.
+  - **E1, seccomp user notification on `connect()`.** The filter checks the
+    architecture and notifies on `connect`. The child passes the listener
+    fd to the parent over a socketpair made before the filter.
+    - `SECCOMP_GET_NOTIF_SIZES`: notif 80, resp 24, data 64 bytes.
+    - The supervisor reads the `sockaddr_un` from `/proc/<pid>/mem`, and
+      `SECCOMP_IOCTL_NOTIF_ID_VALID` succeeds after the read.
+    - **`pidfd_getfd` works** with Yama `ptrace_scope` 1 (the parent takes
+      the child's fd). The fd checks as `S_ISSOCK`, `SO_DOMAIN` `AF_UNIX`
+      and `SO_TYPE` `SOCK_STREAM`. After the supervisor connects it, the
+      app sees `connect()` return 0, and **`SO_PASSCRED` and `O_NONBLOCK`
+      are kept**.
+    - **Fallback, new socket plus `ADDFD` with `SETFD`:** works. But with
+      `SECCOMP_ADDFD_FLAG_SEND`, the app's `connect()` returns the
+      injected fd number instead of 0. So for `connect` the supervisor must
+      use `ADDFD` without `SEND` and then answer the notification with 0.
+  - **E2, an address on an already-connected `AF_UNIX` socket:**
+
+    | Socket | `sendto`/`sendmsg` with the address of socket B |
+    |---|---|
+    | stream (connected to A) | `EISCONN`; B gets nothing |
+    | seqpacket (connected to A) | succeeds, but the data goes to A; the address is ignored |
+    | datagram **socketpair** | **succeeds and the data reaches B** |
+
+    So a datagram socketpair can send to any pathname datagram socket.
+    Allowing them below ABI 9 (SPEC §6.7, as approved) leaves that path
+    open. Decision pending.
+  - **E3, `connect()` through `/proc/self/fd/<O_PATH fd>`:** works. The
+    `O_PATH` fd's `fstat` shows the socket inode, so the supervisor can
+    compare device and inode before connecting.
+  - **E4, io_uring under Landlock (ABI 10):** under a ruleset that allows
+    only `ok/` and `okdir/`, io_uring `OPENAT` and `CONNECT` give the same
+    results as the plain syscalls. Allowed paths succeed; a file and a
+    pathname socket without a rule both get `EACCES` (the socket via
+    `RESOLVE_UNIX`). So io_uring does not bypass Landlock on a Strong
+    kernel. Below ABI 9 it would bypass the seccomp mediation, which is why
+    SPEC §6.7 refuses it there.
 
