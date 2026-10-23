@@ -166,11 +166,22 @@ fn inspect_human(r: &InspectReport) -> String {
                 };
                 let _ = writeln!(o, "    permissions: {}", list(&m.permissions));
                 if !m.sensitive_permissions.is_empty() {
-                    let _ = writeln!(
-                        o,
-                        "    ⚠ sensitive permissions: {}",
-                        list(&m.sensitive_permissions)
-                    );
+                    let _ = writeln!(o, "    ⚠ sensitive permissions:");
+                    for s in &m.sensitive_permissions {
+                        let what = match (&s.path, &s.kind, &s.access) {
+                            (Some(p), Some(k), Some(a)) => {
+                                format!(
+                                    "{} {} ({}, {})",
+                                    escape(&s.id),
+                                    escape(p),
+                                    escape(k),
+                                    escape(a)
+                                )
+                            }
+                            _ => escape(&s.id),
+                        };
+                        let _ = writeln!(o, "      {what}: {}", escape(&s.reason));
+                    }
                 }
                 if !m.own_paths.is_empty() {
                     let _ = writeln!(o, "    own paths: {}", list(&m.own_paths));

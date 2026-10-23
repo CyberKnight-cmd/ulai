@@ -225,7 +225,10 @@ Applies to every file being inspected, validated, verified or installed.
   "glibc_floor": "2.28",
   "entry": "AppRun",
   "permissions": ["user-files", "network", "audio", "gpu", "notifications"],
-  "sensitive_permissions": [],
+  "sensitive_permissions": [
+    { "id": "dotfile", "path": "~/.gitconfig", "kind": "file", "access": "read",
+      "reason": "Shows your git name and email in the commit dialog" }
+  ],
   "own_paths": ["~/.config/example-downloader", "~/.local/share/example-downloader"],
   "integrations": {
     "mime_types": ["x-scheme-handler/magnet"],
@@ -249,7 +252,7 @@ Applies to every file being inspected, validated, verified or installed.
 | `glibc_floor` | if native | Highest glibc symbol version any bundled ELF needs |
 | `entry` | no | Entry point inside the image; defaults to `AppRun` |
 | `permissions` | yes | Ordinary permissions (§5.1); may be empty |
-| `sensitive_permissions` | no | Each one needs explicit consent (§5.2) |
+| `sensitive_permissions` | no | Objects; each one needs explicit consent (§5.2) |
 | `own_paths` | no | Extra per-app directories under `$HOME` (§6.3 rules apply) |
 | `integrations` | no | Written by the handler at install, with consent (ADR-011) |
 
@@ -259,8 +262,9 @@ level are rejected, so that different JSON parsers cannot read the same file
 differently. The JSON Schema is published as
 `schemas/manifest-0.1.schema.json` (MIT, ADR-015). `ulai validate` MUST
 reject unknown permission identifiers, own paths outside `$HOME`, own paths
-that equal or contain a protected path (§6.3), and own paths that are too broad
-(`~`, `~/.config`, `~/.local`, `~/.local/share`, `~/.cache`).
+that equal or contain a protected path (§6.3), own paths that are too broad
+(`~`, `~/.config`, `~/.local`, `~/.local/share`, `~/.cache`), and sensitive
+permissions that break the rules of §5.2.
 
 ## 5. Permissions
 
@@ -281,14 +285,50 @@ ABI numbers refer to the feature table in §6.2.
 
 ### 5.2 Sensitive permissions (never granted by default)
 
+Each entry of `sensitive_permissions` is an object with an `id` and a
+`reason`. The `reason` is required, says why the app needs the permission,
+and is shown in the consent dialog (plain text, at most 300 characters, no
+control or bidi characters).
+
+```json
+{ "id": "ssh-keys", "reason": "Pushes to your git remotes over SSH" }
+{ "id": "dotfile", "path": "~/.gitconfig", "kind": "file", "access": "read",
+  "reason": "Shows your git name and email in the commit dialog" }
+```
+
 | Id | Grants | Note shown to the user |
 |---|---|---|
 | `x11` | X11 sockets | X11 lets any app read the keystrokes and windows of other X11 apps |
 | `secrets` | Secret Service on the session bus | Can read passwords stored in your keyring |
 | `ssh-keys` | Read `~/.ssh` | Can use your SSH identities |
-| `dotfile:<path>`, `dotfile-rw:<path>` | One specific hidden path, read-only (`dotfile:~/.foorc`) or read-write (`dotfile-rw:~/.foorc`). The path is written `~/.name[/…]` | Shown with the exact path |
+| `dotfile` | One specific hidden path (below) | Shown with the exact path and access |
 | `camera` | `/dev/video*` | — |
 | `full-home` | Read all of `$HOME`, including hidden files | For backup tools and file managers |
+
+Only `dotfile` takes further fields, and it needs all of them:
+
+- `path`: one hidden entry of the home directory or a path below one,
+  written `~/.name[/…]`. It must already be normalised (no `.`, `..` or
+  empty components, no trailing `/`) and is literal (no glob characters
+  `* ? [ ] { }`).
+  - It must not be inside the protected set (§6.3) or contain any part of
+    it (so neither `~/.ssh/config` nor `~/.config` is allowed). Protected
+    paths are reachable only through their own permissions: `ssh-keys`,
+    `secrets` or `full-home`.
+- `kind`: `file` or `dir`.
+- `access`: `read` or `read-write`.
+
+The same `id`, or the same `dotfile` path, may be listed only once. There is
+no string form (`"dotfile:~/.foorc"` is not a permission).
+
+Landlock rules attach to existing inodes, so a missing path needs care:
+
+- `read-write` on a path that does not exist yet: after consent, the
+  handler creates it at install time, as an empty file or a `0700`
+  directory, depending on `kind`. Uninstalling leaves it in place, because
+  it may hold the user's data by then.
+- `read` on a path that does not exist: no rule is added. If the path
+  appears later, the app gets access only after the next launch.
 
 Integrations (`autostart`, `native_messaging`, `mime_types` that would replace
 an existing default) are consented at install and written by the handler.

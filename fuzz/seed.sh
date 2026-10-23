@@ -26,7 +26,7 @@ PY
 	head -c "$off" "$f" > "corpus/elf/$(basename "$f" .AppImage).runtime"
 done
 cat > corpus/manifest/spec-example.json <<'JSON'
-{"ulai":"0.1","id":"org.example.Downloader","name":"Example Downloader","version":"2.4.1","summary":"Download manager","arch":["x86_64"],"runtime_mode":"native","glibc_floor":"2.28","entry":"AppRun","permissions":["user-files","network"],"sensitive_permissions":["dotfile:~/.foorc"],"own_paths":["~/.config/example"],"integrations":{"mime_types":["x-scheme-handler/magnet"],"autostart":true,"native_messaging":[{"browser":"firefox","host_manifest":"share/nm.json"}]},"homepage":"https://example.org"}
+{"ulai":"0.1","id":"org.example.Downloader","name":"Example Downloader","version":"2.4.1","summary":"Download manager","arch":["x86_64"],"runtime_mode":"native","glibc_floor":"2.28","entry":"AppRun","permissions":["user-files","network"],"sensitive_permissions":[{"id":"x11","reason":"X11-only toolkit"},{"id":"dotfile","path":"~/.foorc","kind":"file","access":"read","reason":"Reads its settings"}],"own_paths":["~/.config/example"],"integrations":{"mime_types":["x-scheme-handler/magnet"],"autostart":true,"native_messaging":[{"browser":"firefox","host_manifest":"share/nm.json"}]},"homepage":"https://example.org"}
 JSON
 cp "$fx"/openpgp/*.sig.asc "$fx"/openpgp/*.key.asc "$fx"/openpgp/*.gpg corpus/signature/
 printf '[Desktop Entry]\nType=Application\nName=ULAI Fixture\nName[de]=X\nExec=AppRun %%U\nIcon=org.ulai.Fixture\n[Desktop Action a]\nExec=x\n' > corpus/desktop/entry.desktop

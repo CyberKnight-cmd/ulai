@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/CyberKnight-cmd/ulai/schemas/manifest-0.1.schema.json",
   "title": "ULAI manifest 0.1",
-  "description": "The app manifest at /.ulai/manifest.json in a ULAI file (SPEC §4). Unknown fields are allowed and ignored. ulai validate additionally checks rules JSON Schema cannot express: own_paths must not overlap the protected set (SPEC §6.3), and paths must not contain '.' or '..' components. Licence: MIT (ADR-015).",
+  "description": "The app manifest at /.ulai/manifest.json in a ULAI file (SPEC §4). Unknown fields are allowed and ignored. ulai validate additionally checks rules JSON Schema cannot express: own_paths and dotfile paths must not overlap the protected set (SPEC §6.3), paths must not contain '.' or '..' components, and the same sensitive permission (or dotfile path) must not be listed twice. Licence: MIT (ADR-015).",
   "type": "object",
   "required": ["ulai", "id", "name", "version", "summary", "arch", "runtime_mode", "permissions"],
   "properties": {
@@ -33,9 +33,29 @@
       "type": "array",
       "uniqueItems": true,
       "items": {
-        "anyOf": [
-          { "enum": ["x11", "secrets", "ssh-keys", "camera", "full-home"] },
-          { "type": "string", "pattern": "^dotfile(-rw)?:~/\\.[^/]+(/[^/]+)*$" }
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "reason"],
+            "properties": {
+              "id": { "enum": ["x11", "secrets", "ssh-keys", "camera", "full-home"] },
+              "reason": { "$ref": "#/$defs/text", "maxLength": 300 }
+            },
+            "not": {
+              "anyOf": [{ "required": ["path"] }, { "required": ["kind"] }, { "required": ["access"] }]
+            }
+          },
+          {
+            "type": "object",
+            "required": ["id", "path", "kind", "access", "reason"],
+            "properties": {
+              "id": { "const": "dotfile" },
+              "path": { "type": "string", "pattern": "^~/\\.[^/*?\\[\\]{}]+(/[^/*?\\[\\]{}]+)*$" },
+              "kind": { "enum": ["file", "dir"] },
+              "access": { "enum": ["read", "read-write"] },
+              "reason": { "$ref": "#/$defs/text", "maxLength": 300 }
+            }
+          }
         ]
       }
     },

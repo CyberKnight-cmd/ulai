@@ -19,7 +19,10 @@ fn spec_example() -> Value {
       "glibc_floor": "2.28",
       "entry": "AppRun",
       "permissions": ["user-files", "network", "audio", "gpu", "notifications"],
-      "sensitive_permissions": [],
+      "sensitive_permissions": [
+        { "id": "dotfile", "path": "~/.gitconfig", "kind": "file", "access": "read",
+          "reason": "Shows your git name and email in the commit dialog" }
+      ],
       "own_paths": ["~/.config/example-downloader", "~/.local/share/example-downloader"],
       "integrations": {
         "mime_types": ["x-scheme-handler/magnet"],
@@ -184,32 +187,97 @@ fn permissions() {
         &with(|v| v["permissions"] = json!(["gpu", "gpu"])),
         "permissions",
     );
-    for good in [
-        "x11",
-        "secrets",
-        "dotfile:~/.config/foo",
-        "dotfile-rw:~/.foorc",
-        "dotfile:~/.ssh",
-    ] {
-        assert_eq!(
-            problems(&with(|v| v["sensitive_permissions"] = json!([good]))),
-            [],
-            "{good}"
-        );
+}
+
+fn dotfile(path: &str, kind: &str, access: &str) -> Value {
+    json!({ "id": "dotfile", "path": path, "kind": kind, "access": access, "reason": "Reads its settings" })
+}
+
+fn sensitive(entries: Value) -> Value {
+    with(|v| v["sensitive_permissions"] = entries.clone())
+}
+
+#[test]
+fn sensitive_permissions_are_objects() {
+    let goods = [
+        json!({ "id": "x11", "reason": "Uses an X11-only toolkit" }),
+        json!({ "id": "ssh-keys", "reason": "Pushes to git remotes over SSH" }),
+        dotfile("~/.gitconfig", "file", "read"),
+        dotfile("~/.config/foo", "dir", "read-write"),
+        dotfile("~/.foorc", "file", "read-write"),
+    ];
+    for good in &goods {
+        assert_eq!(problems(&sensitive(json!([good]))), [], "{good}");
     }
-    for bad in [
-        "dotfile:~/Documents",
-        "dotfile:/etc/passwd",
-        "dotfile:~/./.x",
-        "dotfile:~/.x/../y",
-        "dotfile:",
-        "admin",
-    ] {
-        assert_problem(
-            &with(|v| v["sensitive_permissions"] = json!([bad])),
-            "sensitive_permissions[0]",
-        );
+    assert_eq!(problems(&sensitive(json!(goods))), []);
+
+    let bads: &[(Value, &str)] = &[
+        // Strings, the old form, are the wrong shape.
+        (json!("x11"), ""),
+        (json!({ "id": "x11" }), ""),
+        (json!({ "id": "x11", "reason": "" }), ".reason"),
+        (json!({ "id": "x11", "reason": "a\u{202e}b" }), ".reason"),
+        (json!({ "id": "x11", "reason": "x".repeat(301) }), ".reason"),
+        (json!({ "id": "admin", "reason": "r" }), ".id"),
+        (
+            json!({ "id": "x11", "path": "~/.x", "reason": "r" }),
+            ".path",
+        ),
+        (
+            json!({ "id": "camera", "access": "read", "reason": "r" }),
+            ".access",
+        ),
+        (
+            json!({ "id": "dotfile", "kind": "file", "access": "read", "reason": "r" }),
+            ".path",
+        ),
+        (
+            json!({ "id": "dotfile", "path": "~/.x", "access": "read", "reason": "r" }),
+            ".kind",
+        ),
+        (
+            json!({ "id": "dotfile", "path": "~/.x", "kind": "file", "reason": "r" }),
+            ".access",
+        ),
+        (dotfile("~/.x", "socket", "read"), ".kind"),
+        (dotfile("~/.x", "file", "write"), ".access"),
+        (dotfile("~/Documents", "dir", "read"), ".path"),
+        (dotfile("/etc/passwd", "file", "read"), ".path"),
+        (dotfile("~/./.x", "file", "read"), ".path"),
+        (dotfile("~/.x/../y", "file", "read"), ".path"),
+        (dotfile("~/.x/", "dir", "read"), ".path"),
+        (dotfile("~/.x//y", "file", "read"), ".path"),
+        (dotfile("~/.", "dir", "read"), ".path"),
+        (dotfile("~/.config/*", "dir", "read"), ".path"),
+        (dotfile("~/.foo?rc", "file", "read"), ".path"),
+        (dotfile("~/.x[1]", "file", "read"), ".path"),
+        // The protected set, inside it, or containing it.
+        (dotfile("~/.ssh", "dir", "read"), ".path"),
+        (dotfile("~/.ssh/id_ed25519", "file", "read"), ".path"),
+        (dotfile("~/.gnupg/gpg.conf", "file", "read"), ".path"),
+        (dotfile("~/.bashrc", "file", "read-write"), ".path"),
+        (dotfile("~/.local", "dir", "read"), ".path"),
+        (dotfile("~/.config", "dir", "read"), ".path"),
+    ];
+    for (bad, suffix) in bads {
+        let m = sensitive(json!([bad]));
+        if suffix.is_empty() {
+            assert!(parse(m.to_string().as_bytes()).is_err(), "{bad}");
+        } else {
+            assert_problem(&m, &format!("sensitive_permissions[0]{suffix}"));
+        }
     }
+
+    // Duplicates: the same id, or the same dotfile path.
+    let x11 = json!({ "id": "x11", "reason": "r" });
+    assert_problem(&sensitive(json!([x11, x11])), "sensitive_permissions");
+    assert_problem(
+        &sensitive(json!([
+            dotfile("~/.foorc", "file", "read"),
+            dotfile("~/.foorc", "file", "read-write")
+        ])),
+        "sensitive_permissions",
+    );
 }
 
 #[test]
@@ -300,8 +368,11 @@ fn schema_agrees_with_validator() {
             v.as_object_mut().unwrap().remove("glibc_floor");
         }),
         with(|v| {
-            v["sensitive_permissions"] =
-                json!(["x11", "dotfile:~/.config/foo", "dotfile-rw:~/.foorc"])
+            v["sensitive_permissions"] = json!([
+                { "id": "x11", "reason": "Uses an X11-only toolkit" },
+                dotfile("~/.config/foo", "dir", "read"),
+                dotfile("~/.foorc", "file", "read-write")
+            ])
         }),
         with(|v| v["own_paths"] = json!(["~/Games/example", "~/.cache/example"])),
         with(|v| v["entry"] = json!("usr/bin/tool")),
@@ -342,9 +413,24 @@ fn schema_agrees_with_validator() {
         with(|v| v["name"] = json!("bad\nname")),
         with(|v| v["homepage"] = json!("http://example.org")),
         with(|v| v["integrations"]["native_messaging"][0]["browser"] = json!("opera")),
+        sensitive(json!([dotfile("~/.config/*", "dir", "read")])),
+        sensitive(json!([dotfile("~/Documents", "dir", "read")])),
+        sensitive(json!([dotfile("~/.x", "socket", "read")])),
+        sensitive(json!([{ "id": "x11", "path": "~/.x", "reason": "r" }])),
+        sensitive(json!([{ "id": "x11", "reason": "" }])),
+        sensitive(json!([{ "id": "admin", "reason": "r" }])),
     ];
     for m in &rejected_by_both {
         assert!(!problems(m).is_empty(), "ULAI accepts {m}");
         assert!(!validator.is_valid(m), "schema accepts {m}");
+    }
+    // Shapes ULAI cannot even parse: the old string form, a missing reason.
+    for m in [
+        sensitive(json!(["x11"])),
+        sensitive(json!(["dotfile:~/.foorc"])),
+        sensitive(json!([{ "id": "x11" }])),
+    ] {
+        assert!(parse(m.to_string().as_bytes()).is_err(), "ULAI parses {m}");
+        assert!(!validator.is_valid(&m), "schema accepts {m}");
     }
 }

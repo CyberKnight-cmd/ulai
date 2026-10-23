@@ -29,11 +29,14 @@ pub const PERMISSIONS: &[&str] = &[
     "notifications",
     "system-bus",
 ];
-/// Sensitive permissions without an argument (SPEC §5.2).
+/// Sensitive permissions without a path (SPEC §5.2).
 pub const SENSITIVE: &[&str] = &["x11", "secrets", "ssh-keys", "camera", "full-home"];
-/// Sensitive permissions that take a hidden path: read-only and read-write.
-pub const DOTFILE_RO: &str = "dotfile:";
-pub const DOTFILE_RW: &str = "dotfile-rw:";
+/// The sensitive permission for one hidden path (SPEC §5.2).
+pub const DOTFILE: &str = "dotfile";
+pub const DOTFILE_KINDS: &[&str] = &["file", "dir"];
+pub const DOTFILE_ACCESS: &[&str] = &["read", "read-write"];
+/// Longest `reason` (it is shown in the consent dialog).
+pub const MAX_REASON_CHARS: usize = 300;
 pub const ARCHES: &[&str] = &["x86_64", "aarch64"];
 pub const BROWSERS: &[&str] = &["chromium-family", "firefox"];
 
@@ -118,13 +121,31 @@ pub struct Manifest {
     pub entry: Option<String>,
     pub permissions: Vec<String>,
     #[serde(default)]
-    pub sensitive_permissions: Vec<String>,
+    pub sensitive_permissions: Vec<SensitivePermission>,
     #[serde(default)]
     pub own_paths: Vec<String>,
     #[serde(default)]
     pub integrations: Option<Integrations>,
     #[serde(default)]
     pub homepage: Option<String>,
+}
+
+/// One sensitive permission (SPEC §5.2), for example
+/// `{ "id": "ssh-keys", "reason": "…" }` or
+/// `{ "id": "dotfile", "path": "~/.gitconfig", "kind": "file",
+/// "access": "read", "reason": "…" }`. `kind` and `access` are kept as
+/// strings so that `validate` can name a wrong value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SensitivePermission {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<String>,
+    /// Why the app needs it; shown in the consent dialog.
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,17 +328,18 @@ pub fn validate(m: &Manifest) -> Vec<Problem> {
     }
     duplicates("permissions", &m.permissions, &mut p);
     for (i, perm) in m.sensitive_permissions.iter().enumerate() {
-        let field = format!("sensitive_permissions[{i}]");
-        if let Some(path) = perm
-            .strip_prefix(DOTFILE_RW)
-            .or_else(|| perm.strip_prefix(DOTFILE_RO))
-        {
-            dotfile_path(&field, path, &mut p);
-        } else if !SENSITIVE.contains(&perm.as_str()) {
-            p.add(field, format!("unknown sensitive permission {perm:?}"));
-        }
+        sensitive_permission(&format!("sensitive_permissions[{i}]"), perm, &mut p);
     }
-    duplicates("sensitive_permissions", &m.sensitive_permissions, &mut p);
+    // The same permission twice: by id, or by path for dotfiles.
+    let keys: Vec<String> = m
+        .sensitive_permissions
+        .iter()
+        .map(|s| match (&s.path, s.id == DOTFILE) {
+            (Some(path), true) => format!("{DOTFILE} {path}"),
+            _ => s.id.clone(),
+        })
+        .collect();
+    duplicates("sensitive_permissions", &keys, &mut p);
 
     for (i, o) in m.own_paths.iter().enumerate() {
         own_path(&format!("own_paths[{i}]"), o, &mut p);
@@ -369,7 +391,48 @@ impl Problems {
 }
 
 fn is_sensitive(perm: &str) -> bool {
-    SENSITIVE.contains(&perm) || perm.starts_with(DOTFILE_RO) || perm.starts_with(DOTFILE_RW)
+    SENSITIVE.contains(&perm) || perm == DOTFILE
+}
+
+/// SPEC §5.2. Every entry needs a reason. Only `dotfile` takes `path`,
+/// `kind` and `access`, and then needs all three.
+fn sensitive_permission(field: &str, s: &SensitivePermission, p: &mut Problems) {
+    text_field(&format!("{field}.reason"), &s.reason, MAX_REASON_CHARS, p);
+    if s.id == DOTFILE {
+        match &s.path {
+            Some(path) => dotfile_path(&format!("{field}.path"), path, p),
+            None => p.add(format!("{field}.path"), "required for \"dotfile\""),
+        }
+        for (name, v, allowed) in [
+            ("kind", &s.kind, DOTFILE_KINDS),
+            ("access", &s.access, DOTFILE_ACCESS),
+        ] {
+            match v {
+                Some(v) if allowed.contains(&v.as_str()) => {}
+                Some(v) => p.add(
+                    format!("{field}.{name}"),
+                    format!("must be one of {allowed:?}, not {v:?}"),
+                ),
+                None => p.add(format!("{field}.{name}"), "required for \"dotfile\""),
+            }
+        }
+        return;
+    }
+    if !SENSITIVE.contains(&s.id.as_str()) {
+        p.add(
+            format!("{field}.id"),
+            format!("unknown sensitive permission {:?}", s.id),
+        );
+        return;
+    }
+    for (name, v) in [("path", &s.path), ("kind", &s.kind), ("access", &s.access)] {
+        if v.is_some() {
+            p.add(
+                format!("{field}.{name}"),
+                format!("only \"dotfile\" takes {name}"),
+            );
+        }
+    }
 }
 
 /// Reverse-DNS app id: 2–255 bytes of `[A-Za-z0-9_-]` components separated
@@ -494,19 +557,51 @@ fn own_path(field: &str, v: &str, p: &mut Problems) {
     }
 }
 
-/// `dotfile:` and `dotfile-rw:` name one hidden entry of the home directory
-/// (or a path below one). They may name a protected path: a sensitive
-/// permission is exactly the explicit consent that SPEC §6.3 requires.
+/// Characters that would make a path a pattern. Paths are literal.
+const GLOB_CHARS: &[char] = &['*', '?', '[', ']', '{', '}'];
+
+/// A `dotfile` path names one hidden entry of the home directory, or a path
+/// below one: written `~/.name[/…]`, already normalised (no `.`, `..` or
+/// empty components, no trailing `/`), without glob characters. It must not
+/// be inside the protected set or contain any of it (SPEC §6.3): protected
+/// paths are reachable only through their own permissions (`ssh-keys`,
+/// `secrets`, `full-home`).
 fn dotfile_path(field: &str, v: &str, p: &mut Problems) {
-    match home_components(v) {
+    let parts = match home_components(v) {
         Some(parts)
             if parts
                 .first()
-                .is_some_and(|c| c.starts_with('.') && c.len() > 1) => {}
-        _ => p.add(
+                .is_some_and(|c| c.starts_with('.') && c.len() > 1) =>
+        {
+            parts
+        }
+        _ => {
+            p.add(
+                field,
+                format!("{v:?} must be a hidden path in the home directory, written ~/.name"),
+            );
+            return;
+        }
+    };
+    if v.contains(GLOB_CHARS) {
+        p.add(
             field,
-            format!("{v:?} must be a hidden path in the home directory, written ~/.name"),
-        ),
+            format!("{v:?} contains glob characters; paths are literal"),
+        );
+        return;
+    }
+    for prot in PROTECTED {
+        let pp = home_components(prot).expect("protected paths are well-formed");
+        if is_prefix(&parts, &pp) || is_prefix(&pp, &parts) {
+            p.add(
+                field,
+                format!(
+                    "{v:?} overlaps the protected path {prot}, which only its own \
+                     permission can grant (ssh-keys, secrets or full-home)"
+                ),
+            );
+            return;
+        }
     }
 }
 
