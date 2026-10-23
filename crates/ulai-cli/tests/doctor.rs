@@ -28,6 +28,7 @@ fn json_has_schema_1_and_every_section() {
         "lsm",
         "landlock",
         "userns",
+        "seccomp",
         "yama",
         "fuse",
         "libc",
@@ -79,7 +80,22 @@ fn broken_pipe_is_not_a_failure() {
 }
 
 #[test]
-fn userns_probe_child_is_hidden_from_help() {
+fn probe_children_are_hidden_from_help() {
     let out = ulai().arg("--help").output().unwrap();
-    assert!(!String::from_utf8_lossy(&out.stdout).contains("__userns-probe"));
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(!help.contains("__userns-probe"), "{help}");
+    assert!(!help.contains("__seccomp-probe"), "{help}");
+}
+
+/// The live probe on the machine running the tests: every kernel in the
+/// test matrix (6.12 and newer) supports user notification, pidfd_getfd
+/// and ADDFD, so anything but `ok` or `fallback_only` is a regression.
+#[test]
+fn seccomp_probe_runs_on_this_host() {
+    let out = ulai().args(["doctor", "--json"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let s = &v["seccomp"];
+    assert_eq!(s["status"], "ok", "{s}");
+    let result = s["result"].as_str().unwrap();
+    assert!(["ok", "fallback_only"].contains(&result), "{s}");
 }

@@ -27,6 +27,9 @@ User namespaces
     unprivileged_userns_clone = 1
   ⚠ live probe failed at: mount tmpfs (EPERM): affects Electron apps (SPEC O2) and ADR-013 option (b)
 
+Seccomp user notification (isolation below Landlock ABI 9)
+  ⚠ works, but pidfd_getfd is refused (Yama?): only the ADDFD fallback is available
+
 Yama
   ✓ ptrace_scope = 1 (restricted: only descendants can be traced)
 

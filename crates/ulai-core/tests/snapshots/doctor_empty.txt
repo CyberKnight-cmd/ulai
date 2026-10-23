@@ -12,6 +12,9 @@ Landlock
 User namespaces
   ? probe: unknown (probe child failed: not configured)
 
+Seccomp user notification (isolation below Landlock ABI 9)
+  ? unknown: probe child failed: not configured
+
 Yama
   ⚠ not active (no ptrace_scope sysctl)
 

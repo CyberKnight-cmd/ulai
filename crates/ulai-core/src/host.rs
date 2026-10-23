@@ -24,6 +24,7 @@ pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 pub const USERNS_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Hidden `ulai` subcommand that runs the user-namespace probe child.
 pub const USERNS_PROBE_SUBCOMMAND: &str = "__userns-probe";
+pub const SECCOMP_PROBE_SUBCOMMAND: &str = "__seccomp-probe";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {
@@ -101,6 +102,9 @@ pub trait Host {
     /// Runs the user-namespace probe in a fresh child process and returns its
     /// stdout (one JSON line, parsed by `doctor::userns`).
     fn userns_probe(&self) -> io::Result<String>;
+    /// Runs the seccomp user-notification probe in a fresh child process
+    /// and returns its stdout (one JSON line, parsed by `doctor::seccomp`).
+    fn seccomp_probe(&self) -> io::Result<String>;
 
     fn exists(&self, path: &Path) -> bool {
         self.metadata(path).is_ok()
@@ -178,12 +182,23 @@ impl Host for SystemHost {
     }
 
     fn userns_probe(&self) -> io::Result<String> {
+        self.probe_child(USERNS_PROBE_SUBCOMMAND)
+    }
+
+    fn seccomp_probe(&self) -> io::Result<String> {
+        self.probe_child(SECCOMP_PROBE_SUBCOMMAND)
+    }
+}
+
+impl SystemHost {
+    /// Runs `ulai <subcommand> <empty private dir>` and returns its stdout.
+    fn probe_child(&self, subcommand: &str) -> io::Result<String> {
         let exe = self.self_exe.as_ref().ok_or_else(|| {
             io::Error::new(io::ErrorKind::Unsupported, "probe child not configured")
         })?;
         let dir = ProbeDir::create()?;
         let mut cmd = Command::new(exe);
-        cmd.arg(USERNS_PROBE_SUBCOMMAND)
+        cmd.arg(subcommand)
             .arg(&dir.0)
             .env_clear()
             .env("LC_ALL", "C");
@@ -198,8 +213,9 @@ impl Host for SystemHost {
     }
 }
 
-/// Empty private directory the probe child mounts a tmpfs on (inside its own
-/// mount namespace only). Removed on drop.
+/// Empty private directory for a probe child: the userns probe mounts a
+/// tmpfs on it (inside its own mount namespace only), the seccomp probe
+/// binds a socket in it and removes it again. Removed on drop.
 struct ProbeDir(PathBuf);
 
 impl ProbeDir {
@@ -208,7 +224,7 @@ impl ProbeDir {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos());
         let path =
-            std::env::temp_dir().join(format!("ulai-doctor-userns-{}-{nanos}", std::process::id()));
+            std::env::temp_dir().join(format!("ulai-doctor-probe-{}-{nanos}", std::process::id()));
         fs::DirBuilder::new().mode(0o700).create(&path)?;
         Ok(Self(path))
     }

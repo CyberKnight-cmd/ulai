@@ -13,7 +13,7 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use ulai_core::doctor;
-use ulai_core::host::{SystemHost, USERNS_PROBE_SUBCOMMAND};
+use ulai_core::host::{SECCOMP_PROBE_SUBCOMMAND, SystemHost, USERNS_PROBE_SUBCOMMAND};
 
 mod inspect_cmd;
 mod verify_cmd;
@@ -84,6 +84,9 @@ enum Command {
     /// Internal: user-namespace probe child run by `doctor`.
     #[command(name = USERNS_PROBE_SUBCOMMAND, hide = true)]
     UsernsProbe { dir: PathBuf },
+    /// Internal: seccomp user-notification probe child run by `doctor`.
+    #[command(name = SECCOMP_PROBE_SUBCOMMAND, hide = true)]
+    SeccompProbe { dir: PathBuf },
 }
 
 fn main() -> Result<ExitCode> {
@@ -92,6 +95,10 @@ fn main() -> Result<ExitCode> {
         // Runs before anything else so the process stays single-threaded.
         Command::UsernsProbe { dir } => {
             println!("{}", doctor::userns::child_main(&dir));
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::SeccompProbe { dir } => {
+            println!("{}", doctor::seccomp::child_main(&dir));
             Ok(ExitCode::SUCCESS)
         }
         Command::Doctor { json } => {

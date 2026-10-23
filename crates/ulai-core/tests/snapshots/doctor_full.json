@@ -89,6 +89,53 @@
     },
     "running_as_root": false
   },
+  "seccomp": {
+    "status": "ok",
+    "errors": [],
+    "result": "fallback_only",
+    "steps": [
+      {
+        "step": "install_filter",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "receive",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "read_memory",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "pidfd_getfd",
+        "ok": false,
+        "errno": "EPERM"
+      },
+      {
+        "step": "receive",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "read_memory",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "add_fd",
+        "ok": true,
+        "errno": null
+      },
+      {
+        "step": "app_connected",
+        "ok": true,
+        "errno": null
+      }
+    ]
+  },
   "yama": {
     "status": "ok",
     "errors": [],

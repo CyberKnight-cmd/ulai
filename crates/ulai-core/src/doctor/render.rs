@@ -87,6 +87,7 @@ pub fn human(r: &Report) -> String {
 
     landlock(&mut o, r);
     userns(&mut o, r);
+    seccomp(&mut o, r);
 
     o.heading("Yama");
     let y = &r.yama.data;
@@ -224,6 +225,36 @@ fn userns(o: &mut Out, r: &Report) {
         o.note("running as root: results do not apply to unprivileged users");
     }
     o.errors(&r.userns);
+}
+
+fn seccomp(o: &mut Out, r: &Report) {
+    use super::seccomp::Outcome;
+    o.heading("Seccomp user notification (isolation below Landlock ABI 9)");
+    let s = &r.seccomp.data;
+    match s.result {
+        Outcome::Ok => o.line(
+            GOOD,
+            "works: the supervisor can connect the app's own socket (pidfd_getfd)",
+        ),
+        Outcome::FallbackOnly => o.line(
+            WARN,
+            "works, but pidfd_getfd is refused (Yama?): only the ADDFD fallback is available",
+        ),
+        Outcome::Failed => {
+            if let Some(f) = s.steps.iter().find(|f| !f.ok) {
+                o.line(
+                    BAD,
+                    format!(
+                        "does not work: {} failed ({})",
+                        f.step.describe(),
+                        f.errno.as_deref().unwrap_or("no errno")
+                    ),
+                );
+            }
+        }
+        Outcome::Unknown => {}
+    }
+    o.errors(&r.seccomp);
 }
 
 fn fuse(o: &mut Out, r: &Report) {
@@ -475,6 +506,18 @@ mod tests {
             r#"{"step":"gid_map","ok":true,"errno":null},"#,
             r#"{"step":"mount_private","ok":true,"errno":null},"#,
             r#"{"step":"mount_tmpfs","ok":false,"errno":"EPERM"}]}"#
+        )
+        .into());
+        // Yama refuses pidfd_getfd here, so only the ADDFD fallback works.
+        h.seccomp = Ok(concat!(
+            r#"{"steps":[{"step":"install_filter","ok":true,"errno":null},"#,
+            r#"{"step":"receive","ok":true,"errno":null},"#,
+            r#"{"step":"read_memory","ok":true,"errno":null},"#,
+            r#"{"step":"pidfd_getfd","ok":false,"errno":"EPERM"},"#,
+            r#"{"step":"receive","ok":true,"errno":null},"#,
+            r#"{"step":"read_memory","ok":true,"errno":null},"#,
+            r#"{"step":"add_fd","ok":true,"errno":null},"#,
+            r#"{"step":"app_connected","ok":true,"errno":null}]}"#
         )
         .into());
         let dir = |mode| MetaInfo {

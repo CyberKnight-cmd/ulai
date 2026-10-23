@@ -31,7 +31,7 @@ as unknown with a reason; it never fails the tool.
 | `schema` | integer | `1` |
 | `status` | `"ok"`, `"partial"`, `"unknown"` | Overall result: `ok` when every section is `ok`, `unknown` when every section is `unknown`, `partial` otherwise. Every ULAI `--json` output carries `schema` and `status` |
 | `ulai_version` | string | Version of the `ulai` binary |
-| `kernel`, `lsm`, `landlock`, `userns`, `yama`, `fuse`, `libc`, `session`, `gpu`, `dbus_proxy`, `xdg` | section | See below |
+| `kernel`, `lsm`, `landlock`, `userns`, `seccomp`, `yama`, `fuse`, `libc`, `session`, `gpu`, `dbus_proxy`, `xdg` | section | See below |
 
 ## Sections
 
@@ -75,6 +75,26 @@ Steps, in order: `unshare` (`CLONE_NEWUSER|CLONE_NEWNS`), `setgroups`
 (write `deny`), `uid_map`, `gid_map`, `mount_private` (`/` made
 `MS_REC|MS_PRIVATE`), `mount_tmpfs` (on an empty temporary directory, inside
 the child's namespace only).
+
+### `seccomp` — seccomp user notification (ADR-013, SPEC §6.7)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `result` | `"ok"`, `"fallback_only"`, `"failed"`, `"unknown"` | `ok`: notification works and the supervisor can connect the app's own socket with `pidfd_getfd`. `fallback_only`: it works, but `pidfd_getfd` is refused (for example by Yama `ptrace_scope` ≥ 2), so only the `ADDFD` fallback is available. `failed`: the mechanism does not work |
+| `steps` | `[{ "step", "ok", "errno" }]` | Every step attempted, in order. A failed method step does not stop the others |
+
+Live probe in a re-executed child (`ulai __seccomp-probe`), which forks: its
+child installs a filter (`SECCOMP_FILTER_FLAG_NEW_LISTENER`) that notifies on
+`connect()`, passes the listener fd back over a socketpair made before the
+filter, and connects twice to a socket in a private temporary directory. The
+supervisor answers the first connect by connecting the app's own socket, and
+the second by injecting a new one. It never lets a call continue. Steps:
+`install_filter`, then for each connect `receive` and `read_memory` (the
+address is read from `/proc/<pid>/mem` and `SECCOMP_IOCTL_NOTIF_ID_VALID` is
+checked after the read), then `pidfd_getfd` and `proc_fd_connect` (connecting
+through `/proc/self/fd/<O_PATH fd>`) for the first and `add_fd` (`ADDFD` with
+`SETFD`, no `SEND`) for the second, and finally `app_connected` (the child saw
+`connect()` return 0 both times).
 
 ### `yama`
 

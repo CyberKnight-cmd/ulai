@@ -27,6 +27,7 @@ pub struct FakeHost {
     pub landlock: Result<i32, i32>,
     pub uid: u32,
     pub userns: Result<String, String>,
+    pub seccomp: Result<String, String>,
     /// Reading this path panics, to test probe isolation.
     pub panic_on: Option<PathBuf>,
 }
@@ -49,6 +50,7 @@ impl FakeHost {
             landlock: Err(libc::ENOSYS),
             uid: 1000,
             userns: Err("not configured".into()),
+            seccomp: Err("not configured".into()),
             panic_on: None,
         }
     }
@@ -193,5 +195,9 @@ impl Host for FakeHost {
 
     fn userns_probe(&self) -> io::Result<String> {
         self.userns.clone().map_err(io::Error::other)
+    }
+
+    fn seccomp_probe(&self) -> io::Result<String> {
+        self.seccomp.clone().map_err(io::Error::other)
     }
 }

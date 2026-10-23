@@ -25,6 +25,7 @@ pub mod libs;
 pub mod lsm;
 pub mod paths;
 pub mod render;
+pub mod seccomp;
 pub mod session;
 pub mod userns;
 pub mod xdg;
@@ -117,6 +118,9 @@ pub struct Report {
     pub lsm: Section<lsm::Lsm>,
     pub landlock: Section<landlock::Landlock>,
     pub userns: Section<userns::Userns>,
+    /// Seccomp user notification: the mechanism below Landlock ABI 9
+    /// (ADR-013, SPEC §6.7).
+    pub seccomp: Section<seccomp::Seccomp>,
     pub yama: Section<yama::Yama>,
     pub fuse: Section<fuse::Fuse>,
     pub libc: Section<libc_probe::Libc>,
@@ -153,6 +157,7 @@ pub fn run(host: &dyn Host) -> Report {
         landlock: isolated("landlock", || landlock::probe(host, lsm_has_landlock)),
         lsm,
         userns: isolated("userns", || userns::probe(host)),
+        seccomp: isolated("seccomp", || seccomp::probe(host)),
         yama: isolated("yama", || yama::probe(host)),
         fuse: isolated("fuse", || fuse::probe(host, &libs)),
         libc: isolated("libc", || libc_probe::probe(host)),
@@ -166,12 +171,13 @@ pub fn run(host: &dyn Host) -> Report {
 }
 
 impl Report {
-    fn section_statuses(&self) -> [Status; 11] {
+    fn section_statuses(&self) -> [Status; 12] {
         [
             self.kernel.status,
             self.lsm.status,
             self.landlock.status,
             self.userns.status,
+            self.seccomp.status,
             self.yama.status,
             self.fuse.status,
             self.libc.status,

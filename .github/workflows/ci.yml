@@ -72,12 +72,19 @@ jobs:
               exit 1
             fi
           done
+      - name: Library tests on the musl target
+        # musl differs from glibc in ways that matter here (for example,
+        # Rust's std drops O_PATH from custom_flags on musl).
+        run: cargo test --locked --target x86_64-unknown-linux-musl -p ulai-core --lib
       - name: Smoke test ulai doctor
         run: |
           b=target/x86_64-unknown-linux-musl/release/ulai
           "$b" doctor
           "$b" doctor --json > doctor.json
           python3 -c 'import json,sys; d=json.load(open("doctor.json")); sys.exit(d["schema"] != 1)'
+          # The seccomp supervisor mechanism (SPEC 6.7) must work in the
+          # shipped binary.
+          python3 -c 'import json,sys; r=json.load(open("doctor.json"))["seccomp"]["result"]; print("seccomp:", r); sys.exit(r not in ("ok", "fallback_only"))'
       - uses: actions/upload-artifact@v4
         with:
           name: ulai-x86_64-linux-musl
