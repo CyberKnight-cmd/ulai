@@ -86,6 +86,11 @@ pub enum LibClass {
     Glibc,
     /// The GPU and driver stack: must come from the host.
     Gpu,
+    /// The Khronos Vulkan loader: allowed, with a warning.
+    VulkanLoader,
+    /// A renderer that runs on top of the host's driver or on the CPU
+    /// (Chromium's ANGLE, SwiftShader): allowed, reported as info.
+    Renderer,
     /// Report and point to SPEC §11.2.
     Warn,
 }
@@ -97,20 +102,47 @@ fn so_base(name: &str, base: &str) -> bool {
         || (name.starts_with(&format!("{base}-")) && name.contains(".so"))
 }
 
-/// `base.so`, `base.so.N…`, or `base_variant…` (the Mesa/NVIDIA naming,
-/// e.g. `libdrm_amdgpu.so.1`, `libEGL_mesa.so.0`). A hyphen does not
-/// continue the family: `libdrm-egl-server.so` is a Qt plugin.
-fn family(name: &str, base: &str) -> bool {
-    name.strip_prefix(base)
-        .is_some_and(|rest| rest == ".so" || rest.starts_with(".so.") || rest.starts_with('_'))
-}
+/// GPU and driver libraries, by exact soname (SPEC §11.1).
+pub const GPU_SONAMES: &[&str] = &[
+    // glvnd dispatch libraries
+    "libGL.so.1",
+    "libEGL.so.1",
+    "libGLX.so.0",
+    "libGLdispatch.so.0",
+    "libOpenGL.so.0",
+    "libGLESv2.so.2",
+    "libGLESv1_CM.so.1",
+    // glvnd vendor libraries
+    "libEGL_mesa.so.0",
+    "libGLX_mesa.so.0",
+    "libEGL_nvidia.so.0",
+    "libGLX_nvidia.so.0",
+    "libGLESv2_nvidia.so.2",
+    "libGLESv1_CM_nvidia.so.1",
+    // the rest of the Mesa and NVIDIA userspace (AGENTS.md rule 4)
+    "libgbm.so.1",
+    "libglapi.so.0",
+    "libOSMesa.so.8",
+    "libxatracker.so.2",
+    "libcuda.so.1",
+    "nvidia_drv.so",
+];
 
-/// Classifies a library by its soname (or file name), per SPEC §11.1.
-///
-/// Families match `base.so*` and `base_*` only. So `libGL*` covers
-/// `libGL.so.1` but not libGLU or libGLEW (ordinary application libraries),
-/// and `libvulkan*` covers the loader and Mesa ICDs (`libvulkan_intel.so`)
-/// but not Qt's `libvulkan-server.so`.
+/// Renderers an app may bundle, by exact soname. Chromium (and so every
+/// Electron app) ships ANGLE as the unversioned `libEGL.so` and
+/// `libGLESv2.so`, and SwiftShader as `libvk_swiftshader.so` (with
+/// `vk_swiftshader_icd.json`). Measured in Obsidian 1.14.4.
+pub const RENDERER_SONAMES: &[&str] = &["libEGL.so", "libGLESv2.so", "libvk_swiftshader.so"];
+
+/// Non-ELF files that belong to a bundled renderer.
+pub const RENDERER_FILES: &[&str] = &["vk_swiftshader_icd.json"];
+
+/// Classifies a library by its soname (or its file name if it has none),
+/// per SPEC §11.1. GPU libraries match exact sonames, plus the driver
+/// families that have no fixed soname: `libdrm.so*` and `libdrm_*`,
+/// `libnvidia-*`, `libgallium-*`, `*_dri.so` and the Mesa Vulkan drivers
+/// `libvulkan_*`. So `libGLU.so.1`, Qt's `libdrm-egl-server.so` and ANGLE's
+/// `libEGL.so` are not GPU libraries.
 pub fn classify(name: &str) -> Option<LibClass> {
     const GLIBC: &[&str] = &[
         "libc",
@@ -125,29 +157,23 @@ pub fn classify(name: &str) -> Option<LibClass> {
     if GLIBC.iter().any(|b| so_base(name, b)) || name.starts_with("ld-linux") {
         return Some(LibClass::Glibc);
     }
-    const GPU: &[&str] = &[
-        "libGL",
-        "libEGL",
-        "libGLX",
-        "libGLdispatch",
-        "libOpenGL",
-        "libGLESv1_CM",
-        "libGLESv2",
-        "libvulkan",
-        "libgbm",
-        "libdrm",
-        "libglapi",
-        "libOSMesa",
-        "libxatracker",
-        "libcuda",
-    ];
-    // Driver files that use a hyphen or a suffix rather than a family name.
-    let driver_file = name.ends_with("_dri.so")
-        || name.starts_with("libgallium-")
+    let drm = name
+        .strip_prefix("libdrm")
+        .is_some_and(|r| r == ".so" || r.starts_with(".so.") || r.starts_with('_'));
+    if GPU_SONAMES.contains(&name)
+        || drm
         || name.starts_with("libnvidia-")
-        || name == "nvidia_drv.so";
-    if driver_file || GPU.iter().any(|b| family(name, b)) {
+        || name.starts_with("libgallium-")
+        || name.starts_with("libvulkan_")
+        || name.ends_with("_dri.so")
+    {
         return Some(LibClass::Gpu);
+    }
+    if name == "libvulkan.so.1" {
+        return Some(LibClass::VulkanLoader);
+    }
+    if RENDERER_SONAMES.contains(&name) {
+        return Some(LibClass::Renderer);
     }
     if so_base(name, "libstdc++")
         || so_base(name, "libgcc_s")
@@ -430,11 +456,21 @@ fn check_elf_files(
                 continue;
             }
         };
+        let basename = path.rsplit('/').next().unwrap_or(&path).to_owned();
         if !elfinfo::is_elf(&head) {
+            if RENDERER_FILES.contains(&basename.as_str()) {
+                out.add(
+                    Severity::Info,
+                    "bundled_renderer",
+                    Some(&path),
+                    format!(
+                        "{basename}: SwiftShader's Vulkan driver manifest; allowed (SPEC §11.1)"
+                    ),
+                );
+            }
             continue;
         }
         summary.elf_files += 1;
-        let basename = path.rsplit('/').next().unwrap_or(&path).to_owned();
         let info = if size > MAX_ELF_BYTES {
             out.add(
                 Severity::Warning,
@@ -476,6 +512,8 @@ fn check_elf_files(
         match classify(&name) {
             Some(LibClass::Glibc) => out.add(Severity::Error, "excluded_library", Some(&path), format!("{name}: glibc and the dynamic loader must come from the host in native mode (SPEC §11.1)")),
             Some(LibClass::Gpu) => out.add(Severity::Error, "excluded_library", Some(&path), format!("{name}: GPU and driver libraries must come from the host (SPEC §11.1)")),
+            Some(LibClass::VulkanLoader) => out.add(Severity::Warning, "excluded_library", Some(&path), format!("{name}: a bundled Vulkan loader; the host's loader matches the host's drivers, so prefer it (SPEC §11.1)")),
+            Some(LibClass::Renderer) => out.add(Severity::Info, "bundled_renderer", Some(&path), format!("{name}: Chromium's ANGLE or SwiftShader renderer; it does not replace the host's driver, so it is allowed (SPEC §11.1)")),
             Some(LibClass::Warn) => {
                 if name.starts_with("libstdc++") {
                     summary.libstdcxx_bundled = true;

@@ -484,4 +484,29 @@ Add one entry per experiment, in this format:
     critical subpackets in the experimental range (100–110), critical
     notations and critical regular expressions. ULAI now checks all of
     these itself, before the cryptography (SPEC §3.2).
+- 2026-10-23 · Arch Linux, kernel 7.2.9-arch1-1 · **exact-soname GPU
+  classification (SPEC §11.1), checked on real apps**
+  - Obsidian 1.14.4 bundles these sonames, read with `ulai-core`'s
+    in-process SquashFS and ELF readers: `libEGL.so` and `libGLESv2.so`
+    (ANGLE, unversioned), `libvk_swiftshader.so` with
+    `vk_swiftshader_icd.json` (`library_path: ./libvk_swiftshader.so`), and
+    `libvulkan.so.1` (the Vulkan loader).
+  - `ulai validate` with the new rules:
+    - Obsidian: no GPU errors; 1 warning (`libvulkan.so.1`) and 4 info
+      findings. It still does not conform, because it has no manifest;
+    - Shotcut: `libvulkan.so.1` is now a warning;
+    - Audacity: `libOpenGL.so.0` is still an error.
+- 2026-10-23 · Arch dev host · **fuzzing, 3-hour run (first attempt)**
+  - Started 2026-10-22T14:29Z, ended 2026-10-23T10:08Z. The host was
+    suspended during the run, and every libFuzzer "timeout" report reads
+    "timeout after 63598 seconds" (17.7 h for one input). Container,
+    signature and desktop stopped with such a timeout, and image recorded
+    a 63,598 s "slow unit".
+  - Each of the four saved inputs replays in 0–2 ms. So these were not
+    hangs, and there was no crash or OOM.
+  - Executions before the stop: container 10.5 M, image 17.8 M, manifest
+    74.4 M, signature 10.4 M, elf 14.2 M, desktop 57.6 M. That is about
+    1.8–1.9× the 1-hour run, so roughly 2 hours per target, not 3.
+  - Rerun started 2026-10-23 under `systemd-inhibit --what=sleep:idle`; the
+    roadmap item stays open until it completes.
 

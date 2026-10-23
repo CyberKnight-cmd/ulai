@@ -31,7 +31,7 @@ fn classification() {
         ("libGLESv2.so.2", Some(Gpu)),
         ("libGLdispatch.so.0", Some(Gpu)),
         ("libEGL_nvidia.so.0", Some(Gpu)),
-        ("libvulkan.so.1", Some(Gpu)),
+        ("libvulkan.so.1", Some(VulkanLoader)),
         ("libvulkan_intel.so", Some(Gpu)),
         ("libdrm_amdgpu.so.1", Some(Gpu)),
         ("libgbm.so.1", Some(Gpu)),
@@ -44,8 +44,27 @@ fn classification() {
         ("libvulkan-server.so", None),
         ("libdrm.so.2", Some(Gpu)),
         ("libGLESv1_CM.so.1", Some(Gpu)),
-        ("libGLESv2.so", Some(Gpu)),
-        ("libEGL.so", Some(Gpu)),
+        ("libGLESv2.so", Some(Renderer)),
+        ("libEGL.so", Some(Renderer)),
+        ("libvk_swiftshader.so", Some(Renderer)),
+        ("libEGL.so.1", Some(Gpu)),
+        ("libOpenGL.so.0", Some(Gpu)),
+        ("libGLX_nvidia.so.0", Some(Gpu)),
+        ("libEGL_mesa.so.0", Some(Gpu)),
+        ("libvulkan_radeon.so", Some(Gpu)),
+        ("libvulkan_lvp.so", Some(Gpu)),
+        ("libgallium-25.2.4-arch1.1.so", Some(Gpu)),
+        ("radeonsi_dri.so", Some(Gpu)),
+        ("libdrm_intel.so.1", Some(Gpu)),
+        ("libnvidia-egl-wayland.so.1", Some(Gpu)),
+        ("libglapi.so.0", Some(Gpu)),
+        ("nvidia_drv.so", Some(Gpu)),
+        // Exact sonames: other names that only look similar are bundled.
+        ("libGL.so", None),
+        ("libGLESv2.so.3", None),
+        ("libvulkan.so", None),
+        ("libvulkan.so.2", None),
+        ("libgbm.so", None),
         ("libcuda.so.1", Some(Gpu)),
         ("libGLX.so.0", Some(Gpu)),
         ("libstdc++.so.6", Some(Warn)),
@@ -304,4 +323,53 @@ fn dwarfs_and_garbage_are_not_validated() {
     assert_eq!(validate(f.path()).unwrap().status, Status::Unsupported);
     let f = temp_file(b"not an appimage");
     assert_eq!(validate(f.path()).unwrap().status.exit_code(), 5);
+}
+
+/// The Electron layout measured in Obsidian 1.14.4: ANGLE, SwiftShader and
+/// the Vulkan loader. None of it is an error.
+#[test]
+fn chromium_renderers_are_info_and_the_vulkan_loader_a_warning() {
+    let f = ulai_image(0o755, |w| {
+        for name in [
+            "libEGL.so",
+            "libGLESv2.so",
+            "libvk_swiftshader.so",
+            "libvulkan.so.1",
+        ] {
+            w.push_file(Cursor::new(small_elf(62)), name, h(0o755))
+                .unwrap();
+        }
+        w.push_file(
+            Cursor::new(
+                br#"{"file_format_version": "1.0.0", "ICD": {"library_path": "./libvk_swiftshader.so", "api_version": "1.0.5"}}"#
+                    .to_vec(),
+            ),
+            "vk_swiftshader_icd.json",
+            h(0o644),
+        )
+        .unwrap();
+    });
+    let r = validate(f.path()).unwrap();
+    assert_eq!(r.status, Status::Conforms, "{:#?}", r.findings);
+    let mut got: Vec<(Severity, &str, &str)> = r
+        .findings
+        .iter()
+        .filter(|f| f.check != "signature")
+        .map(|f| (f.severity, f.check, f.path.as_deref().unwrap_or("")))
+        .collect();
+    got.sort_by_key(|g| g.2);
+    assert_eq!(
+        got,
+        [
+            (Severity::Info, "bundled_renderer", "libEGL.so"),
+            (Severity::Info, "bundled_renderer", "libGLESv2.so"),
+            (Severity::Info, "bundled_renderer", "libvk_swiftshader.so"),
+            (Severity::Warning, "excluded_library", "libvulkan.so.1"),
+            (
+                Severity::Info,
+                "bundled_renderer",
+                "vk_swiftshader_icd.json"
+            ),
+        ]
+    );
 }

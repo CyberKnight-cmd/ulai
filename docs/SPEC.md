@@ -529,28 +529,45 @@ apps when the host copy is older (pkg2appimage issue #538).
 `ulai validate` checks every bundled ELF file by name (`DT_SONAME`, or the
 file name):
 
+`validate` findings never block running a legacy AppImage. They only gate
+publishing `.ulai` files.
+
 - **Error** (MUST come from the host in native mode):
   - glibc and the loader: `libc`, `libm`, `libdl`, `libpthread`, `librt`,
     `libresolv`, `libutil`, `libanl`, `ld-linux*`;
-  - the GPU and driver stack: `libGL*`, `libEGL*`, `libGLX*`,
-    `libGLdispatch*`, `libOpenGL*`, `libvulkan*`, `libgbm*`, `libdrm*`, and
-    Mesa and NVIDIA driver files.
-- **Warning** (report, and point to §11.2): `libstdc++`, `libgcc_s`,
-  `libLLVM*`, `fontconfig`. Also report the highest `GLIBCXX` and `CXXABI`
-  version required by any bundled ELF, and whether `libstdc++` is bundled;
-  §11.2 needs that data.
+  - the GPU and driver stack, by **exact soname**:
+    - glvnd: `libGL.so.1`, `libEGL.so.1`, `libGLX.so.0`,
+      `libGLdispatch.so.0`, `libOpenGL.so.0`, `libGLESv2.so.2`,
+      `libGLESv1_CM.so.1`;
+    - glvnd vendor libraries: `libEGL_mesa.so.0`, `libGLX_mesa.so.0`,
+      `libEGL_nvidia.so.0`, `libGLX_nvidia.so.0`, `libGLESv2_nvidia.so.2`,
+      `libGLESv1_CM_nvidia.so.1`;
+    - the rest of Mesa and the NVIDIA userspace: `libgbm.so.1`,
+      `libglapi.so.0`, `libOSMesa.so.8`, `libxatracker.so.2`,
+      `libcuda.so.1`, `nvidia_drv.so`;
+  - driver families with no fixed soname: `libdrm.so*` and `libdrm_*`,
+    `libnvidia-*`, Mesa's `libgallium-*` and `*_dri.so`, and the Mesa
+    Vulkan drivers `libvulkan_*` (`libvulkan_radeon.so`,
+    `libvulkan_intel.so`, …).
+- **Warning:**
+  - a bundled Vulkan loader, `libvulkan.so.1`. It works, but the host's
+    loader is the one that matches the host's drivers;
+  - `libstdc++`, `libgcc_s`, `libLLVM*`, `fontconfig` (report, and point to
+    §11.2). Also report the highest `GLIBCXX` and `CXXABI` version required
+    by any bundled ELF, and whether `libstdc++` is bundled; §11.2 needs that
+    data.
+- **Info** (allowed): renderers that run on top of the host's driver or on
+  the CPU, which Chromium and so every Electron app ships. These are ANGLE
+  as the unversioned `libEGL.so` and `libGLESv2.so`, and SwiftShader as
+  `libvk_swiftshader.so` with `vk_swiftshader_icd.json`. Exact names
+  measured in Obsidian 1.14.4.
 - Everything else is bundled, with no message.
 
-Names match by **family**: `libX` covers `libX.so`, `libX.so.N…` and the
-Mesa/NVIDIA naming `libX_variant…` (`libdrm_amdgpu.so.1`, `libEGL_mesa.so.0`),
-but not other names that merely start the same way. So `libGL*` covers
-`libGL.so.1` but not libGLU or libGLEW (ordinary application libraries), and
-`libdrm*`/`libvulkan*` do not cover Qt's `libdrm-egl-server.so` or
-`libvulkan-server.so` plugins. The GPU families are libGL, libEGL, libGLX,
-libGLdispatch, libOpenGL, libGLESv1_CM, libGLESv2, libvulkan, libgbm, libdrm,
-libglapi, libOSMesa, libxatracker and libcuda, plus `*_dri.so`,
-`libgallium-*`, `libnvidia-*` and `nvidia_drv.so`. The name checked is
-`DT_SONAME`, or the file name if there is none.
+Matching is exact, so names that only look similar are not GPU libraries:
+`libGLU.so.1` and `libGLEW.so.2.2` (ordinary libraries), ANGLE's `libEGL.so`
+(info, above), and Qt's `libdrm-egl-server.so` and `libvulkan-server.so`
+plugins. The name checked
+is `DT_SONAME`, or the file name if there is none.
 
 ### 11.2 Library conflicts
 
