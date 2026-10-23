@@ -17,6 +17,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+pgp = "0.21"
 ulai-core = { path = "../crates/ulai-core", features = ["test-support"] }
 
 [workspace]
@@ -62,3 +63,9 @@ path = "fuzz_targets/desktop.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sigpackets"
+path = "fuzz_targets/sigpackets.rs"
+test = false
+doc = false

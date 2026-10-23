@@ -1881,6 +1881,7 @@ name = "ulai-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "pgp",
  "ulai-core",
 ]
 

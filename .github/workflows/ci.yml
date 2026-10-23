@@ -104,6 +104,6 @@ jobs:
       - name: Fuzz each target for 60 s
         working-directory: fuzz
         run: |
-          for t in container image manifest signature elf desktop; do
+          for t in container image manifest signature sigpackets elf desktop; do
             cargo +nightly fuzz run -O "$t" -- -max_total_time=60 -timeout=10
           done
