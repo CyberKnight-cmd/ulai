@@ -174,6 +174,21 @@ pub struct Verification {
     pub signatures: Vec<SignatureReport>,
 }
 
+/// Splits `input` into its signature packets under ULAI's rules (SPEC §3.2),
+/// without parsing them; each packet keeps its header. Exposed for the fuzz
+/// target.
+#[doc(hidden)]
+pub fn split_signature_packets(input: &[u8], source: SigSource) -> Result<Vec<Vec<u8>>, Rejection> {
+    packets::signature_packets(input, source).map(|(p, _)| p)
+}
+
+/// The packet tags of binary OpenPGP data, if the packets fill it exactly.
+/// Exposed for the fuzz target.
+#[doc(hidden)]
+pub fn packet_tags(bin: &[u8]) -> Option<Vec<u8>> {
+    packet_framing(bin).map(|v| v.into_iter().map(|(t, _)| t).collect())
+}
+
 /// The signed data. Each candidate signature reads it again from the start.
 pub trait SignedData {
     fn open(&mut self) -> std::io::Result<Box<dyn Read + '_>>;
@@ -297,8 +312,8 @@ pub fn verify_signatures(
         };
         rep.fingerprint = Some(signer_fp.clone());
         rep.key_id = None;
-        let r =
-            check_document_signature(key, primary_sig, sig, signer_fp, subkey, now).and_then(|a| {
+        let r = check_document_signature(key, primary_sig, sig, signer_fp, subkey, source, now)
+            .and_then(|a| {
                 let mut reader = data
                     .open()
                     .map_err(|e| invalid(format!("cannot read the signed data: {e}")))?;
@@ -446,9 +461,19 @@ fn check_document_signature(
     sig: &Signature,
     signer_fp: String,
     subkey: Option<&SignedPublicSubKey>,
+    source: SigSource,
     now: SystemTime,
 ) -> Result<Accepted, Rejection> {
     check_data_signature_policy(sig, now)?;
+    // A text signature is made over line-ending-normalised data, so it does
+    // not bind the exact bytes of a binary file. It is accepted only for the
+    // embedded scheme, where the signed data is the hex digest.
+    if source == SigSource::File && sig.typ() == Some(SignatureType::Text) {
+        return Err(unsupported(
+            "a text signature (0x01) does not bind the exact bytes of a file; a detached \
+             signature over a whole file must be binary (0x00)",
+        ));
+    }
     let primary = &key.primary_key;
     let created = sig
         .created()

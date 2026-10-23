@@ -36,10 +36,10 @@ fn at(secs: u64) -> SystemTime {
 }
 
 fn gnupg(case: &str, now: SystemTime) -> Result<Accepted, Rejection> {
-    verify_detached(
+    super::tests::embedded(
         &read(&format!("{case}.key.asc")),
         &read(&format!("{case}.sig.asc")),
-        read("msg").as_slice(),
+        &read("msg"),
         now,
     )
 }
@@ -396,4 +396,58 @@ fn critical_subpacket_in_unhashed_area_is_ignored() {
         .to_armored_bytes(ArmorOptions::default())
         .unwrap();
     check(&sk.to_public_key(), &sig).unwrap();
+}
+
+/// A text signature (0x01) is computed over line-ending-normalised data, so
+/// it does not bind a binary file's exact bytes: inserting a CR before an LF
+/// leaves it valid. ULAI accepts text signatures only in the embedded
+/// scheme (over the hex digest) and rejects them as detached signatures
+/// over a whole file.
+#[test]
+fn text_signature_does_not_bind_a_binary_and_is_rejected_for_files() {
+    let sk = rpgp_key();
+    let key = armored(&sk.to_public_key());
+    // Binary data with LF bytes, as any ELF file has.
+    let data: Vec<u8> = b"\x7fELF\x02\x01\x01\0\nbinary\x00\x01\nmore\xff\n".to_vec();
+    let mut cfg = SignatureConfig::v4(
+        SignatureType::Text,
+        sk.primary_key.algorithm(),
+        HashAlgorithm::Sha256,
+    );
+    cfg.hashed_subpackets = base_subpackets(&sk.primary_key);
+    let sig = cfg
+        .sign(&sk.primary_key, &Password::empty(), data.as_slice())
+        .unwrap();
+    let sig = DetachedSignature::new(sig)
+        .to_armored_bytes(ArmorOptions::default())
+        .unwrap();
+
+    let mut tampered = data.clone();
+    let lf = tampered.iter().position(|&b| b == b'\n').unwrap();
+    tampered.insert(lf, b'\r');
+    assert_ne!(tampered, data);
+
+    // The weakness: the signature still verifies over the changed bytes.
+    let embedded = |d: &[u8]| {
+        verify_signatures(
+            &key,
+            &sig,
+            SigSource::Embedded,
+            &mut &d[..],
+            SystemTime::now(),
+        )
+        .unwrap()
+        .result
+    };
+    embedded(&data).unwrap();
+    embedded(&tampered).unwrap();
+
+    // As a detached signature over a file, ULAI rejects it, changed or not.
+    for d in [&data, &tampered] {
+        let r = verify_detached(&key, &sig, d.as_slice(), SystemTime::now());
+        assert!(
+            matches!(&r, Err(Rejection::Unsupported(m)) if m.contains("must be binary (0x00)")),
+            "{r:?}"
+        );
+    }
 }

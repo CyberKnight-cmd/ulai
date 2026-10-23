@@ -23,11 +23,25 @@ fn now() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(1_798_761_600)
 }
 
+/// Verifies through the embedded scheme (`SigSource::Embedded`), where text
+/// signatures count. The GnuPG fixtures' `msg` is a 64-digit hex digest,
+/// like the data the embedded scheme signs.
+pub(super) fn embedded(
+    key: &[u8],
+    sig: &[u8],
+    data: &[u8],
+    now: SystemTime,
+) -> Result<Accepted, Rejection> {
+    verify_signatures(key, sig, SigSource::Embedded, &mut &data[..], now)
+        .unwrap()
+        .result
+}
+
 fn run(case: &str) -> Result<Accepted, Rejection> {
-    verify_detached(
+    embedded(
         &read(&format!("{case}.key.asc")),
         &read(&format!("{case}.sig.asc")),
-        read("msg").as_slice(),
+        &read("msg"),
         now(),
     )
 }
@@ -316,10 +330,11 @@ fn rfc(name: &str) -> Vec<u8> {
 /// cleartext.
 #[test]
 fn rfc9580_v6_vector() {
-    let a = verify_detached(
+    // A text signature: it counts only through the embedded path.
+    let a = embedded(
         &rfc("a3-v6-cert.key.asc"),
         &rfc("a6-v6-cleartext.sig.asc"),
-        rfc("a6-cleartext.txt").as_slice(),
+        &rfc("a6-cleartext.txt"),
         now(),
     )
     .unwrap();
@@ -334,10 +349,10 @@ fn rfc9580_v6_vector() {
     let mut tampered = rfc("a6-cleartext.txt");
     tampered[0] ^= 1;
     assert!(
-        verify_detached(
+        embedded(
             &rfc("a3-v6-cert.key.asc"),
             &rfc("a6-v6-cleartext.sig.asc"),
-            tampered.as_slice(),
+            &tampered,
             now()
         )
         .is_err()
