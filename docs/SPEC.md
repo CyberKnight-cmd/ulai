@@ -138,8 +138,48 @@ exactly at that offset in every file tested (RESEARCH.md, 2026-10-21/22).
     The check is ULAI's own and runs before the cryptography; it does not
     rely on rPGP. Critical subpackets in the unhashed area are not covered
     by the signature, so anyone could add them; they are ignored.
-  - NUL padding is stripped only after ASCII armor (embedded sections are
-    armored and padded). Binary keys and signatures are read as they are.
+  - **What a signature file or section may contain.** ULAI splits it into
+    packets by their own length headers before rPGP sees any of them
+    (rPGP's detached-signature parser returns the first signature and never
+    reads the rest).
+    - Allowed: signature, marker and padding packets, and unknown
+      non-critical packet types (40–63), which are skipped with a warning
+      (RFC 9580 §4.3). Any other type (literal data, compressed data, keys,
+      unassigned critical types, …) is `corrupt`. Partial or indeterminate
+      packet lengths are `corrupt`.
+    - A signature file: only whitespace before the armor and after its
+      footer; for binary, nothing after the last packet. Anything else is
+      `corrupt`.
+    - `.sha256_sig`: packets are found by their length headers, never by
+      trimming zero bytes. After the armor footer's line ending, or after
+      the last binary packet, the rest of the section must be zero bytes;
+      anything else is `corrupt`. Upstream appimagetool writes a newline
+      after the footer and go-appimage writes none; both pass.
+    - NUL padding is stripped from keys only after ASCII armor; binary keys
+      are read as they are.
+  - **Several signatures.** Up to 16 signature packets are allowed; more is
+    `corrupt` (this bounds the verification work, since each candidate
+    reads the signed data again).
+    - The verdict is valid if at least one signature is valid by the
+      trusted key (the embedded `.sig_key`, the `--key` file, or from M3
+      the pinned key) under every rule above. Order does not matter.
+    - Only document signatures count: binary (0x00) and text (0x01), which
+      upstream appimagetool produces (S1). Any other type, such as a key
+      certification (0x10–0x13), never counts and is reported as
+      "ignored: not a document signature".
+    - If a signature by the trusted key fails while another one by the same
+      key is valid, the result is valid, with a warning.
+    - If none is valid, the reported reason is, in this order: the worst
+      failure of a signature by the trusted key (invalid, then from the
+      future, unsupported, corrupt); else a signature rPGP cannot read
+      (`unsupported`); else "made by a key that is not in the supplied key"
+      (`invalid`); else "no document signature" (`unsupported`).
+    - `--json` lists every signature with its fingerprint (or key id),
+      algorithm, type, creation time and status: `valid`, `invalid`,
+      `signature_from_future`, `unsupported`, `corrupt`, `unknown_key`,
+      `ignored`, or `not_checked` when the trusted key itself is unusable.
+      The human output shows the deciding signature and one line counting
+      the others.
   - **Data ULAI cannot read is `unsupported`, not `invalid`.** If rPGP
     fails to parse a key or signature whose OpenPGP packet framing is
     intact, and whose first packet (after marker and padding packets) is

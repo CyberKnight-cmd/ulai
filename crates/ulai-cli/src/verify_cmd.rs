@@ -67,6 +67,50 @@ fn utc(secs: u64) -> String {
     )
 }
 
+/// One line counting the signatures other than the deciding one, by
+/// status; `None` when there is only one. The JSON lists them all.
+fn others_line(r: &Report) -> Option<String> {
+    use ulai_core::signature::SigStatus as S;
+    if r.signatures.len() < 2 {
+        return None;
+    }
+    let deciding = r
+        .signatures
+        .iter()
+        .position(|s| s.status == S::Valid && r.status == Status::Valid);
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for (i, s) in r.signatures.iter().enumerate() {
+        if Some(i) == deciding {
+            continue;
+        }
+        let label = match s.status {
+            S::Valid => "also valid",
+            S::Invalid => "invalid",
+            S::SignatureFromFuture => "dated in the future",
+            S::Unsupported => "unsupported",
+            S::Corrupt => "corrupt",
+            S::UnknownKey => "by another key",
+            S::Ignored => "ignored: not a document signature",
+            S::NotChecked => "not checked",
+        };
+        match counts.iter_mut().find(|(l, _)| *l == label) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((label, 1)),
+        }
+    }
+    let n: usize = counts.iter().map(|(_, n)| n).sum();
+    let detail = counts
+        .iter()
+        .map(|(l, n)| format!("{n} {l}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(if deciding.is_some() {
+        format!("other signatures: {n} ({detail}); --json lists them")
+    } else {
+        format!("signatures: {n} ({detail}); --json lists them")
+    })
+}
+
 fn human(r: &Report) -> String {
     let mut o = String::new();
     let _ = writeln!(o, "ULAI verify: {}", escape(&r.file));
@@ -121,6 +165,9 @@ fn human(r: &Report) -> String {
         if let Some(exp) = s.key_expires {
             let _ = writeln!(o, "    key expires:    {}", utc(exp));
         }
+    }
+    if let Some(line) = others_line(r) {
+        let _ = writeln!(o, "    {line}");
     }
     for w in &r.warnings {
         let _ = writeln!(o, "  ⚠ {}", escape(w));
@@ -179,6 +226,7 @@ mod tests {
             fs: None,
             ulai_file: Some(false),
             signer: Some(accepted.signer.clone()),
+            signatures: vec![],
             warnings: vec![],
             reason: None,
         };
@@ -188,6 +236,52 @@ mod tests {
         }
         assert!(text.contains("\\u{202E}FE3C 2B1A\\u{2066}"), "{text}");
         assert!(text.contains(&grouped(&accepted.signer.primary_fingerprint)));
+    }
+
+    #[test]
+    fn other_signatures_are_counted_on_one_line() {
+        use ulai_core::signature::{SigStatus as S, SignatureReport};
+        let sig = |status| SignatureReport {
+            fingerprint: None,
+            key_id: None,
+            algorithm: None,
+            signature_type: None,
+            created: None,
+            status,
+            reason: None,
+        };
+        let mut r = Report {
+            schema: 1,
+            status: Status::Valid,
+            file: "app.AppImage".into(),
+            method: Some(Method::Detached),
+            key_source: Some(KeySource::Supplied),
+            signature_file: None,
+            fs: None,
+            ulai_file: Some(false),
+            signer: None,
+            signatures: vec![sig(S::UnknownKey)],
+            warnings: vec![],
+            reason: None,
+        };
+        assert_eq!(others_line(&r), None);
+        r.signatures = vec![
+            sig(S::UnknownKey),
+            sig(S::Valid),
+            sig(S::Ignored),
+            sig(S::UnknownKey),
+        ];
+        assert_eq!(
+            others_line(&r).unwrap(),
+            "other signatures: 3 (2 by another key, 1 ignored: not a document signature); \
+             --json lists them"
+        );
+        r.status = Status::Invalid;
+        r.signatures = vec![sig(S::Invalid), sig(S::UnknownKey)];
+        assert_eq!(
+            others_line(&r).unwrap(),
+            "signatures: 2 (1 invalid, 1 by another key); --json lists them"
+        );
     }
 
     #[test]

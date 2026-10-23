@@ -75,7 +75,7 @@ fn signature_from_the_future_has_its_own_status() {
     assert_eq!(r.status, Status::SignatureFromFuture);
     assert_eq!(r.status.exit_code(), 4);
     let reason = r.reason.unwrap();
-    assert!(reason.starts_with("the signature was created "), "{reason}");
+    // The key's self-signature is checked first, and it is in the future too.
     assert!(reason.contains(" days in the future"), "{reason}");
     assert!(reason.contains("clock"), "{reason}");
 }

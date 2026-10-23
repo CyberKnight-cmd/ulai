@@ -110,25 +110,319 @@ pub struct Signer {
 /// expired after it made the signature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Accepted {
+    /// The deciding signature: the first valid one.
     pub signer: Signer,
     pub warnings: Vec<String>,
 }
 
-/// Verifies `signature` (ASCII-armored detached OpenPGP signature) over the
-/// bytes read from `data`, using the one key in `key` (ASCII-armored).
-/// `now` is the verifier's clock: signatures created more than
-/// [`CLOCK_SKEW_TOLERANCE_SECS`] after it are rejected, and keys that expired
-/// since signing produce a warning.
+/// Most signatures one signature file or section may hold. More is corrupt;
+/// this bounds the verification work (each candidate reads the data again).
+pub const MAX_SIGNATURES: usize = 16;
+
+/// Where the signature came from. The rules for what may follow it differ.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SigSource {
+    /// `.sha256_sig`: after the signature, the rest of the section must be
+    /// zero bytes.
+    Embedded,
+    /// A signature file: only whitespace after the armor footer, nothing
+    /// after the last binary packet.
+    File,
+}
+
+/// What became of one signature packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SigStatus {
+    Valid,
+    Invalid,
+    SignatureFromFuture,
+    Unsupported,
+    Corrupt,
+    /// Not made by the trusted key (or any of its subkeys).
+    UnknownKey,
+    /// Not a document signature (type 0x00 or 0x01); never counts.
+    Ignored,
+    /// The trusted key itself is unusable, so nothing was checked.
+    NotChecked,
+}
+
+/// One signature packet, for the report. All of it is unauthenticated
+/// unless `status` is `valid`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SignatureReport {
+    /// Full fingerprint of the key that made it, if that key is in the
+    /// trusted key; otherwise the issuer fingerprint the signature names.
+    pub fingerprint: Option<String>,
+    /// Issuer key id (16 hex digits), when the signature names no
+    /// fingerprint.
+    pub key_id: Option<String>,
+    pub algorithm: Option<String>,
+    /// `binary`, `text`, or the type number in hex for other types.
+    pub signature_type: Option<String>,
+    pub created: Option<u64>,
+    pub status: SigStatus,
+    pub reason: Option<String>,
+}
+
+/// The result of checking every signature in a signature file or section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Verification {
+    /// Valid if at least one document signature by the trusted key is valid.
+    pub result: Result<Accepted, Rejection>,
+    /// Every signature packet, in file order.
+    pub signatures: Vec<SignatureReport>,
+}
+
+/// The signed data. Each candidate signature reads it again from the start.
+pub trait SignedData {
+    fn open(&mut self) -> std::io::Result<Box<dyn Read + '_>>;
+}
+
+impl SignedData for &[u8] {
+    fn open(&mut self) -> std::io::Result<Box<dyn Read + '_>> {
+        Ok(Box::new(*self))
+    }
+}
+
+/// Verifies a detached signature held in memory, as from a signature file.
+/// Reads `data` into memory first; for large files use [`verify_signatures`].
 pub fn verify_detached(
     key: &[u8],
     signature: &[u8],
-    data: impl Read,
+    mut data: impl Read,
     now: SystemTime,
 ) -> Result<Accepted, Rejection> {
-    let key = parse_key(key)?;
-    let sig = parse_signature(signature)?;
-    check_data_signature_policy(&sig, now)?;
+    let mut buf = Vec::new();
+    data.read_to_end(&mut buf)
+        .map_err(|e| invalid(format!("cannot read the signed data: {e}")))?;
+    verify_signatures(key, signature, SigSource::File, &mut buf.as_slice(), now)
+        .map_err(|e| invalid(format!("cannot read the signed data: {e}")))?
+        .result
+}
 
+/// Checks every signature in `signature` (one or more OpenPGP signature
+/// packets, armored or binary; SPEC §3.2) over `data`, against the one
+/// trusted key in `key`. Valid if at least one document signature made by
+/// that key is valid under every rule. `now` is the verifier's clock:
+/// signatures created more than [`CLOCK_SKEW_TOLERANCE_SECS`] after it are
+/// rejected, and keys that expired since signing produce a warning.
+pub fn verify_signatures(
+    key: &[u8],
+    signature: &[u8],
+    source: SigSource,
+    data: &mut dyn SignedData,
+    now: SystemTime,
+) -> std::io::Result<Verification> {
+    let fail = |r: Rejection, signatures| Verification {
+        result: Err(r),
+        signatures,
+    };
+    let (packets, ignored_packets) = match packets::signature_packets(signature, source) {
+        Ok(p) => p,
+        Err(r) => return Ok(fail(r, Vec::new())),
+    };
+    let parsed: Vec<Result<Signature, Rejection>> = packets
+        .iter()
+        .map(|bytes| {
+            DetachedSignature::from_bytes(bytes.as_slice())
+                .map(|d| d.signature)
+                .map_err(|e| {
+                    unsupported(format!(
+                        "a signature packet is well-formed, but ULAI's OpenPGP library (rPGP) \
+                         cannot read it: {e}"
+                    ))
+                })
+        })
+        .collect();
+    let mut reports: Vec<SignatureReport> = parsed.iter().map(describe).collect();
+
+    // The trusted key: checked once, for every signature.
+    let not_checked = |r: Rejection, mut reports: Vec<SignatureReport>| {
+        for rep in &mut reports {
+            rep.status = SigStatus::NotChecked;
+            rep.reason = Some("the trusted key is unusable".into());
+        }
+        fail(r, reports)
+    };
+    let key = match parse_key(key) {
+        Ok(k) => k,
+        Err(r) => return Ok(not_checked(r, reports)),
+    };
+    let primary_sig = match check_primary_key(&key, now) {
+        Ok(s) => s,
+        Err(r) => return Ok(not_checked(r, reports)),
+    };
+    let key = &key;
+
+    // Each signature, in file order.
+    let mut accepted: Vec<Accepted> = Vec::new();
+    let mut by_key_failures: Vec<Rejection> = Vec::new();
+    let mut unreadable: Vec<Rejection> = Vec::new();
+    let mut unknown_key = 0;
+    let mut ignored = 0;
+    for (sig, rep) in parsed.iter().zip(reports.iter_mut()) {
+        let sig = match sig {
+            Ok(s) => s,
+            Err(r) => {
+                set(rep, r);
+                unreadable.push(r.clone());
+                continue;
+            }
+        };
+        if let Err(r) = check_sig_version(sig, "the signature") {
+            set(rep, &r);
+            unreadable.push(r);
+            continue;
+        }
+        if !matches!(sig.typ(), Some(SignatureType::Binary | SignatureType::Text)) {
+            rep.status = SigStatus::Ignored;
+            rep.reason = Some("ignored: not a document signature".into());
+            ignored += 1;
+            continue;
+        }
+        let (signer_fp, subkey) = match find_signing_key(key, sig) {
+            Ok(found) => found,
+            Err(Rejection::Invalid(m)) => {
+                rep.status = SigStatus::UnknownKey;
+                rep.reason = Some(m);
+                unknown_key += 1;
+                continue;
+            }
+            Err(r) => {
+                set(rep, &r);
+                unreadable.push(r);
+                continue;
+            }
+        };
+        rep.fingerprint = Some(signer_fp.clone());
+        rep.key_id = None;
+        let r =
+            check_document_signature(key, primary_sig, sig, signer_fp, subkey, now).and_then(|a| {
+                let mut reader = data
+                    .open()
+                    .map_err(|e| invalid(format!("cannot read the signed data: {e}")))?;
+                let verified = match subkey {
+                    None => sig.verify(&key.primary_key, &mut reader),
+                    Some(sub) => sig.verify(&sub.key, &mut reader),
+                };
+                verified.map_err(|e| {
+                    tracing::debug!(error = %e, "data signature verification failed");
+                    invalid("the signature does not match the signed data")
+                })?;
+                Ok(a)
+            });
+        match r {
+            Ok(a) => {
+                rep.status = SigStatus::Valid;
+                accepted.push(a);
+            }
+            Err(e) => {
+                set(rep, &e);
+                by_key_failures.push(e);
+            }
+        }
+    }
+
+    let result = if let Some(mut a) = accepted.first().cloned() {
+        if ignored_packets > 0 {
+            a.warnings.push(format!(
+                "{ignored_packets} packet{} of unknown type next to the signature ignored",
+                if ignored_packets == 1 { "" } else { "s" }
+            ));
+        }
+        let failed = by_key_failures.len();
+        if failed > 0 {
+            a.warnings.push(format!(
+                "{failed} other signature{} by the same key did not verify",
+                if failed == 1 { "" } else { "s" }
+            ));
+        }
+        Ok(a)
+    } else if let Some(r) = worst(&by_key_failures) {
+        Err(r)
+    } else if let Some(r) = unreadable.first() {
+        Err(r.clone())
+    } else if unknown_key > 0 {
+        Err(invalid(if parsed.len() == 1 {
+            "the signature was made by a key that is not in the supplied key"
+        } else {
+            "no signature was made by the supplied key"
+        }))
+    } else {
+        Err(unsupported(format!(
+            "no document signature (binary or text); {ignored} signature{} of other types ignored",
+            if ignored == 1 { "" } else { "s" }
+        )))
+    };
+    Ok(Verification {
+        result,
+        signatures: reports,
+    })
+}
+
+/// Of several failures by the trusted key, the one to report: invalid
+/// first (the data or a binding does not verify), then from the future,
+/// unsupported, corrupt; the earliest in file order within each.
+fn worst(failures: &[Rejection]) -> Option<Rejection> {
+    let rank = |r: &Rejection| match r {
+        Rejection::Invalid(_) => 0,
+        Rejection::FromFuture { .. } => 1,
+        Rejection::Unsupported(_) => 2,
+        Rejection::Corrupt(_) => 3,
+    };
+    failures.iter().min_by_key(|r| rank(r)).cloned()
+}
+
+fn set(rep: &mut SignatureReport, r: &Rejection) {
+    let (status, reason) = match r {
+        Rejection::Invalid(m) => (SigStatus::Invalid, m.clone()),
+        Rejection::Corrupt(m) => (SigStatus::Corrupt, m.clone()),
+        Rejection::Unsupported(m) => (SigStatus::Unsupported, m.clone()),
+        Rejection::FromFuture { .. } => (
+            SigStatus::SignatureFromFuture,
+            r.to_string().trim_start_matches("invalid: ").to_owned(),
+        ),
+    };
+    rep.status = status;
+    rep.reason = Some(reason);
+}
+
+/// What a signature says about itself (unauthenticated).
+fn describe(sig: &Result<Signature, Rejection>) -> SignatureReport {
+    let mut rep = SignatureReport {
+        fingerprint: None,
+        key_id: None,
+        algorithm: None,
+        signature_type: None,
+        created: None,
+        status: SigStatus::Unsupported,
+        reason: None,
+    };
+    let Ok(sig) = sig else { return rep };
+    rep.fingerprint = sig
+        .issuer_fingerprint()
+        .first()
+        .map(|fp| hex::encode_upper(fp.as_bytes()));
+    if rep.fingerprint.is_none() {
+        rep.key_id = sig
+            .issuer_key_id()
+            .first()
+            .map(|id| hex::encode_upper(id.as_ref()));
+    }
+    rep.algorithm = sig.config().map(|c| algorithm_name(c.pub_alg));
+    rep.signature_type = sig.typ().map(|t| match t {
+        SignatureType::Binary => "binary".to_owned(),
+        SignatureType::Text => "text".to_owned(),
+        other => format!("0x{:02x}", u8::from(other)),
+    });
+    rep.created = sig.created().map(|t| u64::from(t.as_secs()));
+    rep
+}
+
+/// The primary key's policy, its newest valid self-signature, and
+/// revocation. Independent of the signature being checked.
+fn check_primary_key(key: &SignedPublicKey, now: SystemTime) -> Result<&Signature, Rejection> {
     let primary = &key.primary_key;
     check_key_policy(
         primary.version(),
@@ -136,14 +430,26 @@ pub fn verify_detached(
         primary.public_params(),
         "primary key",
     )?;
-
-    // The primary key must carry a valid self-signature; the newest one
-    // decides its flags and expiry.
-    let primary_sig = newest_valid_self_signature(&key, now)?;
+    // The newest valid self-signature decides flags and expiry.
+    let primary_sig = newest_valid_self_signature(key, now)?;
     if !key.details.revocation_signatures.is_empty() {
         return Err(invalid("the key has been revoked"));
     }
+    Ok(primary_sig)
+}
 
+/// Every rule for one document signature by the trusted key, except the
+/// check over the data itself (the caller streams that).
+fn check_document_signature(
+    key: &SignedPublicKey,
+    primary_sig: &Signature,
+    sig: &Signature,
+    signer_fp: String,
+    subkey: Option<&SignedPublicSubKey>,
+    now: SystemTime,
+) -> Result<Accepted, Rejection> {
+    check_data_signature_policy(sig, now)?;
+    let primary = &key.primary_key;
     let created = sig
         .created()
         .map(|t| u64::from(t.as_secs()))
@@ -157,8 +463,6 @@ pub fn verify_detached(
     let mut warnings = Vec::new();
     check_expiry("primary key", primary_expires, created, now, &mut warnings)?;
 
-    // Which key made the signature?
-    let (signer_fp, subkey) = find_signing_key(&key, &sig)?;
     let (key_version, algorithm, params, key_expires) = match subkey {
         None => {
             if !primary_sig.key_flags().sign() {
@@ -188,7 +492,7 @@ pub fn verify_detached(
             {
                 return Err(invalid("the signing subkey has been revoked"));
             }
-            let binding = newest_valid_signing_binding(&key, sub, now)?;
+            let binding = newest_valid_signing_binding(key, sub, now)?;
             let sub_created = u64::from(k.created_at().as_secs());
             if created < sub_created {
                 return Err(invalid("signature predates the signing subkey"));
@@ -203,16 +507,6 @@ pub fn verify_detached(
             )
         }
     };
-
-    // Finally, the signature over the data itself (streamed).
-    let verified = match subkey {
-        None => sig.verify(primary, data),
-        Some(sub) => sig.verify(&sub.key, data),
-    };
-    verified.map_err(|e| {
-        tracing::debug!(error = %e, "data signature verification failed");
-        invalid("the signature does not match the signed data")
-    })?;
 
     if let Some(exp) = sig.signature_expiration_time() {
         let sig_expires = created.saturating_add(u64::from(exp.as_secs()));
@@ -351,69 +645,6 @@ fn binary(input: &[u8]) -> Option<Vec<u8>> {
     Some(v)
 }
 
-/// Splits binary OpenPGP data into packets by their framing alone (RFC 9580
-/// §4.2), without interpreting any body. Returns `(tag, body offset)` for
-/// each packet, or `None` if a header or length is malformed or the packets
-/// do not end exactly at the end of the input.
-fn packet_framing(bin: &[u8]) -> Option<Vec<(u8, usize)>> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < bin.len() {
-        let h = bin[i];
-        if h & 0x80 == 0 {
-            return None;
-        }
-        if h & 0x40 != 0 {
-            // New format; partial body lengths chain until a final length.
-            let tag = h & 0x3F;
-            i += 1;
-            out.push((tag, 0));
-            loop {
-                let l0 = *bin.get(i)? as usize;
-                let (len, hl, last) = match l0 {
-                    0..=191 => (l0, 1, true),
-                    192..=223 => (((l0 - 192) << 8) + *bin.get(i + 1)? as usize + 192, 2, true),
-                    224..=254 => (1 << (l0 & 0x1F), 1, false),
-                    _ => {
-                        let b = bin.get(i + 1..i + 5)?;
-                        (u32::from_be_bytes(b.try_into().ok()?) as usize, 5, true)
-                    }
-                };
-                if out.last()?.1 == 0 {
-                    out.last_mut()?.1 = i + hl;
-                }
-                i = i.checked_add(hl)?.checked_add(len)?;
-                if i > bin.len() {
-                    return None;
-                }
-                if last {
-                    break;
-                }
-            }
-        } else {
-            let tag = (h >> 2) & 0x0F;
-            let (len, hl) = match h & 3 {
-                0 => (*bin.get(i + 1)? as usize, 2),
-                1 => (
-                    u16::from_be_bytes(bin.get(i + 1..i + 3)?.try_into().ok()?) as usize,
-                    3,
-                ),
-                2 => (
-                    u32::from_be_bytes(bin.get(i + 1..i + 5)?.try_into().ok()?) as usize,
-                    5,
-                ),
-                _ => (bin.len() - i - 1, 1), // indeterminate: to the end
-            };
-            out.push((tag, i + hl));
-            i = i.checked_add(hl)?.checked_add(len)?;
-            if i > bin.len() {
-                return None;
-            }
-        }
-    }
-    (!out.is_empty()).then_some(out)
-}
-
 /// Version byte of the first packet if it is a public-key packet (tag 6).
 fn first_public_key_version(input: &[u8]) -> Option<u8> {
     let bin = binary(input)?;
@@ -422,20 +653,6 @@ fn first_public_key_version(input: &[u8]) -> Option<u8> {
         return None;
     }
     bin.get(body).copied()
-}
-
-/// Parses exactly one detached signature packet (armored or binary).
-fn parse_signature(input: &[u8]) -> Result<Signature, Rejection> {
-    let bytes = trimmed(input, "signature")?;
-    let err = |e: pgp::errors::Error| parse_failure(bytes, "signature", 2, &e);
-    let sig = if is_armor(bytes) {
-        DetachedSignature::from_string(armor_text(bytes, "signature")?)
-            .map_err(err)?
-            .0
-    } else {
-        DetachedSignature::from_bytes(bytes).map_err(err)?
-    };
-    Ok(sig.signature)
 }
 
 /// The armor must be ASCII text without NUL bytes inside it.
@@ -799,7 +1016,12 @@ fn hash_name(h: Option<HashAlgorithm>) -> &'static str {
     }
 }
 
+mod packets;
+use packets::packet_framing;
+
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_multi;
 #[cfg(test)]
 mod tests_rules;

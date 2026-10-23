@@ -128,13 +128,23 @@ fn trailing_newline_is_invalid() {
 }
 
 #[test]
-fn nul_padding_after_armor_is_accepted() {
+fn nul_padding_after_armor_is_accepted_only_in_sections() {
     // Embedded sections are NUL-padded to their full size.
     let mut key = read("ed25519-text-sha512.key.asc");
     key.extend_from_slice(&[0; 4096]);
     let mut sig = read("ed25519-text-sha512.sig.asc");
     sig.extend_from_slice(&[0; 512]);
-    verify_detached(&key, &sig, read("msg").as_slice(), now()).unwrap();
+    let msg = read("msg");
+    verify_signatures(&key, &sig, SigSource::Embedded, &mut msg.as_slice(), now())
+        .unwrap()
+        .result
+        .unwrap();
+    // In a signature file, only whitespace may follow the armor.
+    let r = verify_detached(&key, &sig, msg.as_slice(), now());
+    assert!(
+        matches!(&r, Err(Rejection::Corrupt(m)) if m.contains("whitespace")),
+        "{r:?}"
+    );
 }
 
 #[test]
@@ -209,28 +219,6 @@ fn certificate_rpgp_cannot_read_is_unsupported() {
         now(),
     );
     assert!(matches!(r, Err(Rejection::Corrupt(_))), "{r:?}");
-}
-
-#[test]
-fn packet_framing_handles_every_length_form() {
-    // New format: one-octet, two-octet, five-octet and partial lengths.
-    let mut b = vec![0xC2, 2, 0xAA, 0xBB];
-    b.extend([0xC2, 192, 0]);
-    b.extend(vec![0; 192]);
-    b.extend([0xC2, 255, 0, 0, 0, 1, 0xCC]);
-    b.extend([0xCB, 0xE1, 1, 2, 1, 9]); // partial 2 bytes, then final 1
-    let f = packet_framing(&b).unwrap();
-    assert_eq!(f.iter().map(|p| p.0).collect::<Vec<_>>(), [2, 2, 2, 11]);
-    assert_eq!(f[0].1, 2);
-    // Old format: one-, two-, four-octet and indeterminate lengths.
-    let mut o = vec![0x88, 1, 0xAA, 0x89, 0, 1, 0xBB, 0x8A, 0, 0, 0, 1, 0xCC];
-    o.extend([0x8B, 1, 2, 3]);
-    let f = packet_framing(&o).unwrap();
-    assert_eq!(f.iter().map(|p| p.0).collect::<Vec<_>>(), [2, 2, 2, 2]);
-    // Broken: length past the end, not a packet header, empty.
-    assert_eq!(packet_framing(&[0xC2, 5, 1]), None);
-    assert_eq!(packet_framing(b"hello"), None);
-    assert_eq!(packet_framing(&[]), None);
 }
 
 #[test]

@@ -20,7 +20,9 @@ use serde::Serialize;
 
 use crate::appimage::{Container, ContainerError, FsKind};
 use crate::imagefs::{ImageFs, Limits};
-use crate::signature::{self, MAX_ARMOR_BYTES, Rejection, Signer};
+use crate::signature::{
+    self, MAX_ARMOR_BYTES, Rejection, SigSource, SignatureReport, SignedData, Signer, Verification,
+};
 
 /// Version of the `ulai verify --json` output.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -85,6 +87,8 @@ pub struct Report {
     /// Whether the image contains `/.ulai/manifest.json`; `null` if unknown.
     pub ulai_file: Option<bool>,
     pub signer: Option<Signer>,
+    /// Every signature found, in order, with its own status (SPEC §3.2).
+    pub signatures: Vec<SignatureReport>,
     pub warnings: Vec<String>,
     /// Why the status is not `valid`.
     pub reason: Option<String>,
@@ -122,6 +126,7 @@ impl Report {
             fs: None,
             ulai_file: None,
             signer: None,
+            signatures: Vec::new(),
             warnings: Vec::new(),
             reason: None,
         }
@@ -202,10 +207,14 @@ pub fn verify(path: &Path, opts: &Options) -> io::Result<Report> {
             },
         };
         let digest = container.signature_digest_hex()?;
-        return Ok(finish(
-            report,
-            signature::verify_detached(&key, &sig, digest.as_bytes(), opts.now),
-        ));
+        let v = signature::verify_signatures(
+            &key,
+            &sig,
+            SigSource::Embedded,
+            &mut digest.as_bytes(),
+            opts.now,
+        )?;
+        return Ok(finish(report, v));
     }
 
     // No embedded signature. A ULAI file must have one (ADR-016).
@@ -257,21 +266,16 @@ pub fn verify(path: &Path, opts: &Options) -> io::Result<Report> {
         Ok(k) => k,
         Err(m) => return Ok(report.with(Status::Unsupported, m)),
     };
-    let data = io::BufReader::with_capacity(
-        1 << 20,
-        PositionedReader {
-            file: container.file(),
-            pos: 0,
-        },
-    );
-    Ok(finish(
-        report,
-        signature::verify_detached(&key, &sig, data, opts.now),
-    ))
+    let mut data = WholeFile {
+        file: container.file(),
+    };
+    let v = signature::verify_signatures(&key, &sig, SigSource::File, &mut data, opts.now)?;
+    Ok(finish(report, v))
 }
 
-fn finish(mut report: Report, result: Result<signature::Accepted, Rejection>) -> Report {
-    match result {
+fn finish(mut report: Report, v: Verification) -> Report {
+    report.signatures = v.signatures;
+    match v.result {
         Ok(a) => {
             report.status = Status::Valid;
             report.signer = Some(a.signer);
@@ -343,6 +347,24 @@ fn read_small(path: &Path, what: &str) -> io::Result<Result<Vec<u8>, String>> {
         );
     }
     Ok(Err(m))
+}
+
+/// The whole file, read through the already open handle, once per
+/// candidate signature.
+struct WholeFile<'a> {
+    file: &'a File,
+}
+
+impl SignedData for WholeFile<'_> {
+    fn open(&mut self) -> io::Result<Box<dyn Read + '_>> {
+        Ok(Box::new(io::BufReader::with_capacity(
+            1 << 20,
+            PositionedReader {
+                file: self.file,
+                pos: 0,
+            },
+        )))
+    }
 }
 
 /// Streams the whole file through the already open handle (positioned reads
